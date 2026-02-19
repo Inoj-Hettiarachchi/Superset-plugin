@@ -81,7 +81,6 @@ class SupersetDataEntryPlugin:
         Configure connection to Superset's database
         Uses SQLALCHEMY_DATABASE_URI from Superset configuration
         """
-        from sqlalchemy import create_engine
         # Get Superset's database URI
         uri = self.app.config.get('SQLALCHEMY_DATABASE_URI')
         
@@ -146,7 +145,6 @@ class SupersetDataEntryPlugin:
     
     def _run_migrations_if_needed(self):
         """Run bundled migrations if plugin tables are missing."""
-        from sqlalchemy import text
         engine = self.app.config['DATA_ENTRY_ENGINE']
         with engine.connect() as conn:
             result = conn.execute(text("""
