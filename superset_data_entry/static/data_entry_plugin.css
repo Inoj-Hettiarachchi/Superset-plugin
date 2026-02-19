@@ -1,0 +1,134 @@
+/* Data Entry Plugin - UI enhancements */
+
+/* Form list cards */
+.data-entry-form-card {
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    transition: box-shadow 0.2s ease;
+}
+.data-entry-form-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.data-entry-form-card .card-title {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+.data-entry-form-card .card-text {
+    color: #6c757d;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    min-height: 2.5em;
+}
+.data-entry-form-card .btn-group {
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+.data-entry-form-card .card-footer {
+    background: #f8f9fa;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    padding: 0.5rem 1rem;
+}
+.data-entry-table-badge {
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+/* Form list page header */
+.data-entry-page-title {
+    margin-bottom: 0.25rem;
+}
+.data-entry-page-subtitle {
+    color: #6c757d;
+    font-size: 0.95rem;
+    margin-bottom: 1.25rem;
+}
+.data-entry-header-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Empty state */
+.data-entry-empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px dashed #dee2e6;
+}
+.data-entry-empty-state .fa {
+    font-size: 3rem;
+    color: #adb5bd;
+    margin-bottom: 1rem;
+}
+.data-entry-empty-state p {
+    color: #6c757d;
+    margin-bottom: 1.25rem;
+}
+
+/* Form builder sections */
+.data-entry-section-card {
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    margin-bottom: 1.5rem;
+}
+.data-entry-section-card .card-header {
+    background: #f8f9fa;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    font-weight: 600;
+    padding: 0.75rem 1.25rem;
+}
+.data-entry-section-card .card-header .fa {
+    margin-right: 0.5rem;
+    opacity: 0.8;
+}
+.data-entry-permissions-row .form-check {
+    margin-bottom: 0;
+}
+.data-entry-add-field-wrap {
+    margin-bottom: 1rem;
+}
+.data-entry-add-field-wrap .btn {
+    padding: 0.5rem 1.25rem;
+}
+.data-entry-field-card {
+    background: #f8f9fa;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+}
+.data-entry-form-actions {
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    padding-top: 1.25rem;
+    margin-top: 0.5rem;
+}
+
+/* Data entry form page */
+.data-entry-form-title {
+    margin-bottom: 0.25rem;
+}
+.data-entry-form-desc {
+    color: #6c757d;
+    font-size: 0.95rem;
+    margin-bottom: 1.25rem;
+}
+.data-entry-form .form-group {
+    margin-bottom: 1.25rem;
+}
+.data-entry-form .btn-success.btn-lg {
+    padding: 0.5rem 1.5rem;
+}
+.data-entry-form .btn-link {
+    text-decoration: none;
+}
+
+/* Loading state for buttons */
+.data-entry-btn-loading {
+    pointer-events: none;
+    opacity: 0.85;
+}
+.data-entry-btn-loading .fa-spinner {
+    margin-right: 0.5rem;
+}

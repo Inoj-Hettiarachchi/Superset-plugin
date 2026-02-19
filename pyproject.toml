@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "superset-data-entry-plugin"
+version = "1.0.0"
+description = "Dynamic data entry forms plugin for Apache Superset"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "99x Technology" }]
+keywords = ["superset", "plugin", "data-entry", "forms", "flask-appbuilder"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "Flask>=3.0.0",
+    "Flask-AppBuilder>=4.0.0",
+    "SQLAlchemy>=1.4.0",
+    "psycopg2-binary>=2.9.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/99x/superset-data-entry-plugin"
+Source = "https://github.com/99x/superset-data-entry-plugin"
+Issues = "https://github.com/99x/superset-data-entry-plugin/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["superset_data_entry*"]
+
+[tool.setuptools.package-data]
+superset_data_entry = ["templates/**/*.html", "static/**/*.js", "static/**/*.css"]

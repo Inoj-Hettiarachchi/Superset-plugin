@@ -1,0 +1,17 @@
+{% extends "appbuilder/base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="alert alert-danger mt-4">
+                <h4><i class="fa fa-exclamation-triangle"></i> Error</h4>
+                <p>{{ error }}</p>
+            </div>
+            <a href="/data-entry/forms/list/" class="btn btn-secondary">
+                <i class="fa fa-arrow-left"></i> Back to Forms
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

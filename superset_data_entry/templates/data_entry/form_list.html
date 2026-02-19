@@ -1,0 +1,73 @@
+{% extends "appbuilder/base.html" %}
+
+{% block content %}
+<link rel="stylesheet" href="/data-entry-plugin/static/data_entry_plugin.css">
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="data-entry-header-row">
+                <div>
+                    <h2 class="data-entry-page-title">
+                        <i class="fa fa-wpforms"></i> Data Entry Forms
+                    </h2>
+                    <p class="data-entry-page-subtitle">Choose a form to enter or view data.</p>
+                </div>
+                {% if is_admin %}
+                <div>
+                    <a href="/data-entry/builder/" class="btn btn-primary">
+                        <i class="fa fa-plus"></i> Create New Form
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+            
+            {% if forms %}
+            <div class="row">
+                {% for form in forms %}
+                <div class="col-12 col-md-6 col-lg-4 mb-4">
+                    <div class="card data-entry-form-card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ form.title }}</h5>
+                            <p class="card-text">{{ form.description or 'No description' }}</p>
+                            
+                            <div class="btn-group" role="group">
+                                <a href="/data-entry/entry/{{ form.id }}" class="btn btn-success btn-sm">
+                                    <i class="fa fa-edit"></i> Enter Data
+                                </a>
+                                <a href="/data-entry/data/{{ form.id }}" class="btn btn-info btn-sm">
+                                    <i class="fa fa-table"></i> View Data
+                                </a>
+                                {% if is_admin %}
+                                <a href="/data-entry/builder/{{ form.id }}" class="btn btn-secondary btn-sm">
+                                    <i class="fa fa-cog"></i> Configure
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="card-footer text-muted">
+                            <small>
+                                <i class="fa fa-database"></i>
+                                <span class="badge bg-secondary data-entry-table-badge">{{ form.table_name }}</span>
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="data-entry-empty-state">
+                <i class="fa fa-wpforms"></i>
+                <p class="mb-0">No forms available yet.</p>
+                {% if is_admin %}
+                <a href="/data-entry/builder/" class="btn btn-primary">
+                    <i class="fa fa-plus"></i> Create your first form
+                </a>
+                {% else %}
+                <p class="small text-muted mt-2">Ask an administrator to create forms.</p>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

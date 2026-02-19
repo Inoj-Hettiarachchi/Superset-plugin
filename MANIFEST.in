@@ -1,0 +1,3 @@
+recursive-include superset_data_entry/templates *.html
+recursive-include superset_data_entry/static *.js *.css
+include README.md

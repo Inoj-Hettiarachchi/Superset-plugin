@@ -1,0 +1,150 @@
+{% extends "appbuilder/base.html" %}
+
+{% block tail_js %}
+{{ super() }}
+<script src="/data-entry-plugin/static/form_builder.js" nonce="{{ csp_nonce() }}"></script>
+{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="/data-entry-plugin/static/data_entry_plugin.css">
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <h2 class="data-entry-page-title">
+                <i class="fa fa-cogs"></i> Form Builder
+            </h2>
+            <p class="data-entry-page-subtitle">Configure form metadata and fields. Data is stored in a PostgreSQL table.</p>
+            
+            <form id="formBuilderForm">
+                <input type="hidden" id="formId" value="{{ form_config.id if form_config else '' }}">
+                
+                <div class="card data-entry-section-card">
+                    <div class="card-header"><i class="fa fa-sliders"></i> Form Configuration</div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="formName">Form Name (URL-friendly)</label>
+                            <input type="text" class="form-control" id="formName" 
+                                   value="{{ form_config.name if form_config else '' }}" 
+                                   placeholder="vessel_shift_config" required>
+                            <small class="form-text text-muted">Lowercase, no spaces, use underscores</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="formTitle">Form Title</label>
+                            <input type="text" class="form-control" id="formTitle" 
+                                   value="{{ form_config.title if form_config else '' }}" 
+                                   placeholder="Vessel Shift Configuration" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="formDescription">Description</label>
+                            <textarea class="form-control" id="formDescription" rows="3">{{ form_config.description if form_config else '' }}</textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="tableName">Table Name</label>
+                            <input type="text" class="form-control" id="tableName" 
+                                   value="{{ form_config.table_name if form_config else '' }}" 
+                                   placeholder="vessel_shift_config" required>
+                            <small class="form-text text-muted">PostgreSQL table where data will be stored</small>
+                        </div>
+                        
+                        <div class="row data-entry-permissions-row">
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="isActive" 
+                                           {{ 'checked' if not form_config or form_config.is_active else '' }}>
+                                    <label class="form-check-label" for="isActive">Active (users can submit data)</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="allowEdit" 
+                                           {{ 'checked' if not form_config or form_config.allow_edit else '' }}>
+                                    <label class="form-check-label" for="allowEdit">Allow editing records</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="allowDelete">
+                                    <label class="form-check-label" for="allowDelete">Allow deleting records</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card data-entry-section-card">
+                    <div class="card-header"><i class="fa fa-list"></i> Form Fields</div>
+                    <div class="card-body">
+                        <p class="text-muted">Add and reorder fields. Field name must be lowercase with underscores.</p>
+                        
+                        <div id="fieldsContainer">
+                            {% if form_config and form_config.fields %}
+                            {% for field in form_config.fields %}
+                            <div class="card mb-3 field-card data-entry-field-card" data-field-id="{{ field.id }}">
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-2">
+                                            <label>Order</label>
+                                            <input type="number" class="form-control form-control-sm field-order" value="{{ field.field_order }}" min="1">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label>Field Name *</label>
+                                            <input type="text" class="form-control form-control-sm field-name" value="{{ field.field_name }}" placeholder="field_name" required>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label>Label *</label>
+                                            <input type="text" class="form-control form-control-sm field-label" value="{{ field.field_label }}" placeholder="Field Label" required>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label>Type *</label>
+                                            <select class="form-control form-control-sm field-type" required>
+                                                <option value="text" {{ 'selected' if field.field_type == 'text' else '' }}>Text</option>
+                                                <option value="integer" {{ 'selected' if field.field_type == 'integer' else '' }}>Integer</option>
+                                                <option value="decimal" {{ 'selected' if field.field_type == 'decimal' else '' }}>Decimal</option>
+                                                <option value="date" {{ 'selected' if field.field_type == 'date' else '' }}>Date</option>
+                                                <option value="boolean" {{ 'selected' if field.field_type == 'boolean' else '' }}>Boolean</option>
+                                                <option value="select" {{ 'selected' if field.field_type == 'select' else '' }}>Select</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-1">
+                                            <label>Required</label>
+                                            <div class="form-check">
+                                                <input type="checkbox" class="form-check-input field-required" {{ 'checked' if field.is_required else '' }}>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-1">
+                                            <label>&nbsp;</label>
+                                            <button type="button" class="btn btn-sm btn-danger btn-block remove-field">
+                                                <i class="fa fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                            {% endif %}
+                        </div>
+                        
+                        <div class="data-entry-add-field-wrap">
+                            <button type="button" class="btn btn-success btn-lg" id="addFieldBtn">
+                                <i class="fa fa-plus"></i> Add Field
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="data-entry-form-actions">
+                    <button type="submit" class="btn btn-primary" id="formBuilderSubmitBtn">
+                        <i class="fa fa-save"></i> Save Form
+                    </button>
+                    <a href="/data-entry/forms/list/" class="btn btn-secondary">
+                        <i class="fa fa-times"></i> Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

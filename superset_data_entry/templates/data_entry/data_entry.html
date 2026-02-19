@@ -1,0 +1,107 @@
+{% extends "appbuilder/base.html" %}
+
+{% block tail_js %}
+{{ super() }}
+<script src="/data-entry-plugin/static/data_entry.js" nonce="{{ csp_nonce() }}"></script>
+{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="/data-entry-plugin/static/data_entry_plugin.css">
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <h2 class="data-entry-form-title">
+                <i class="fa fa-edit"></i> {{ form_config.title }}
+            </h2>
+            
+            {% if form_config.description %}
+            <p class="data-entry-form-desc">{{ form_config.description }}</p>
+            {% endif %}
+            
+            <div class="card">
+                <div class="card-body">
+                    <form id="dataEntryForm" class="data-entry-form" data-form-id="{{ form_config.id }}">
+                        {% for field in form_config.fields %}
+                        <div class="form-group">
+                            <label for="field_{{ field.field_name }}">
+                                {{ field.field_label }}
+                                {% if field.is_required %}<span class="text-danger">*</span>{% endif %}
+                            </label>
+                            
+                            {% if field.field_type == 'textarea' %}
+                                <textarea 
+                                    class="form-control" 
+                                    id="field_{{ field.field_name }}" 
+                                    name="{{ field.field_name }}"
+                                    placeholder="{{ field.placeholder or '' }}"
+                                    {{ 'required' if field.is_required else '' }}
+                                    rows="4"></textarea>
+                            
+                            {% elif field.field_type == 'select' %}
+                                <select 
+                                    class="form-control" 
+                                    id="field_{{ field.field_name }}" 
+                                    name="{{ field.field_name }}"
+                                    {{ 'required' if field.is_required else '' }}>
+                                    <option value="">-- Select --</option>
+                                    {% if field.options %}
+                                        {% for option in field.options %}
+                                        <option value="{{ option.value }}">{{ option.label }}</option>
+                                        {% endfor %}
+                                    {% endif %}
+                                </select>
+                            
+                            {% elif field.field_type in ['boolean', 'checkbox'] %}
+                                <div class="form-check">
+                                    <input 
+                                        type="checkbox" 
+                                        class="form-check-input" 
+                                        id="field_{{ field.field_name }}" 
+                                        name="{{ field.field_name }}">
+                                    <label class="form-check-label" for="field_{{ field.field_name }}">
+                                        {{ field.help_text or 'Yes' }}
+                                    </label>
+                                </div>
+                            
+                            {% else %}
+                                <input 
+                                    type="{{ 'number' if field.field_type in ['number', 'integer', 'decimal'] else 'date' if field.field_type == 'date' else 'datetime-local' if field.field_type == 'datetime' else 'time' if field.field_type == 'time' else 'text' }}"
+                                    class="form-control" 
+                                    id="field_{{ field.field_name }}" 
+                                    name="{{ field.field_name }}"
+                                    placeholder="{{ field.placeholder or '' }}"
+                                    value="{{ field.default_value or '' }}"
+                                    {{ 'required' if field.is_required else '' }}
+                                    {% if field.field_type == 'decimal' %}step="0.01"{% endif %}
+                                    {% if field.validation_rules and field.validation_rules.min_value %}min="{{ field.validation_rules.min_value }}"{% endif %}
+                                    {% if field.validation_rules and field.validation_rules.max_value %}max="{{ field.validation_rules.max_value }}"{% endif %}>
+                            {% endif %}
+                            
+                            {% if field.help_text %}
+                            <small class="form-text text-muted">{{ field.help_text }}</small>
+                            {% endif %}
+                            
+                            <div class="invalid-feedback" id="error_{{ field.field_name }}"></div>
+                        </div>
+                        {% endfor %}
+                        
+                        <hr>
+                        
+                        <div class="form-group">
+                            <button type="submit" class="btn btn-success btn-lg" id="dataEntrySubmitBtn">
+                                <i class="fa fa-check"></i> Submit
+                            </button>
+                            <button type="reset" class="btn btn-secondary">
+                                <i class="fa fa-undo"></i> Reset
+                            </button>
+                            <a href="/data-entry/forms/list/" class="btn btn-outline-secondary">
+                                <i class="fa fa-arrow-left"></i> Back to Forms
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
