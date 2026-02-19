@@ -38,4 +38,7 @@ where = ["."]
 include = ["superset_data_entry*"]
 
 [tool.setuptools.package-data]
-superset_data_entry = ["templates/**/*.html", "static/**/*.js", "static/**/*.css"]
+superset_data_entry = ["templates/**/*.html", "static/**/*.js", "static/**/*.css", "migrations/*.sql"]
+
+[project.scripts]
+superset-data-entry-setup = "superset_data_entry.setup_cli:main"

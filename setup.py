@@ -21,6 +21,12 @@ setup(
             'templates/**/*.html',
             'static/**/*.js',
             'static/**/*.css',
+            'migrations/*.sql',
+        ],
+    },
+    entry_points={
+        'console_scripts': [
+            'superset-data-entry-setup=superset_data_entry.setup_cli:main',
         ],
     },
     install_requires=[

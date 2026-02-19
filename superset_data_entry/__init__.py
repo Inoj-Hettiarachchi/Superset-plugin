@@ -80,28 +80,21 @@ class SupersetDataEntryPlugin:
     
     def _setup_database(self):
         """
-        Configure connection to application database
+        Configure connection to Superset's database
+        Uses SQLALCHEMY_DATABASE_URI from Superset configuration
         """
-        db_config = self.app.config.get('DATA_ENTRY_DB_CONFIG')
+        # Get Superset's database URI
+        uri = self.app.config.get('SQLALCHEMY_DATABASE_URI')
         
-        if not db_config:
-            raise ValueError("DATA_ENTRY_DB_CONFIG not found in Superset configuration")
-        
-        if not all(db_config.values()):
-            raise ValueError("DATA_ENTRY_DB_CONFIG has missing values")
-        
-        # Create SQLAlchemy engine URI for application database
-        uri = (
-            f"postgresql://{db_config['username']}:{db_config['password']}"
-            f"@{db_config['host']}:{db_config['port']}/{db_config['database']}"
-        )
+        if not uri:
+            raise ValueError("SQLALCHEMY_DATABASE_URI not found in Superset configuration")
         
         # Store URI and create a shared engine (engines are heavyweight and manage
         # connection pools -- they must be created once, not per-request)
         self.app.config['DATA_ENTRY_DB_URI'] = uri
         self.app.config['DATA_ENTRY_ENGINE'] = create_engine(uri, pool_pre_ping=True)
         
-        logger.info(f"✅ Plugin connected to database: {db_config['database']}")
+        logger.info("✅ Plugin connected to Superset's database")
     
     def _register_views(self):
         """
@@ -152,6 +145,24 @@ class SupersetDataEntryPlugin:
         
         logger.info("✅ Plugin API registered at /api/v1/data-entry")
     
+    def _run_migrations_if_needed(self):
+        """Run bundled migrations if plugin tables are missing."""
+        engine = self.app.config['DATA_ENTRY_ENGINE']
+        with engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT COUNT(*) FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name IN ('form_configurations', 'form_fields')
+            """))
+            count = result.scalar()
+        if count < 2:
+            from .migrations_runner import run_migrations
+            logger.info("Plugin tables missing; running migrations...")
+            run_migrations(engine)
+            logger.info("✅ Migrations completed")
+        else:
+            logger.info("✅ Plugin database tables found")
+    
     def _health_check(self):
         """
         Verify plugin is working correctly
@@ -159,24 +170,7 @@ class SupersetDataEntryPlugin:
         """
         try:
             engine = self.app.config['DATA_ENTRY_ENGINE']
-            
-            with engine.connect() as conn:
-                # Check if plugin tables exist
-                result = conn.execute(text("""
-                    SELECT COUNT(*) FROM information_schema.tables
-                    WHERE table_schema = 'public'
-                    AND table_name IN ('form_configurations', 'form_fields')
-                """))
-                count = result.scalar()
-                
-                if count == 2:
-                    logger.info("✅ Plugin database tables found")
-                else:
-                    logger.warning(
-                        "⚠️  Plugin tables not found. "
-                        "Run database migrations (V6, V7) to create required tables."
-                    )
-                
+            self._run_migrations_if_needed()
         except Exception as e:
             logger.error(f"❌ Plugin health check failed: {e}")
             raise

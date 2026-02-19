@@ -2,6 +2,15 @@
 
 A Flask-AppBuilder plugin that adds dynamic data entry form capabilities to Apache Superset.
 
+## Quick setup in a new project
+
+1. **Install:** `pip install --no-deps git+https://github.com/YOUR_ORG/REPO_NAME.git@main`
+2. **Run setup:** `superset-data-entry-setup` (or `superset-data-entry-setup --config-dir /path/to/superset/config`)
+3. **Add the printed snippet** to your `superset_config.py`
+4. **Restart Superset** — plugin tables are created automatically on first load
+
+See **[SETUP_NEW_PROJECT.md](SETUP_NEW_PROJECT.md)** for the full step-by-step guide.
+
 ## Features
 
 - ✅ **Dynamic Form Builder** - Create forms through UI without writing code
@@ -31,7 +40,7 @@ pip install --no-deps "git+ssh://git@github.com/YOUR_ORG/superset-data-entry-plu
 pip install --no-deps git+https://github.com/YOUR_ORG/superset-data-entry-plugin.git@v1.0.0
 ```
 
-Always use `--no-deps` to avoid upgrading Superset's Flask/SQLAlchemy. Then see **Configure Superset** and **Run migrations** below.
+Always use `--no-deps` to avoid upgrading Superset's Flask/SQLAlchemy. For the simplest path, run **superset-data-entry-setup** and follow [SETUP_NEW_PROJECT.md](SETUP_NEW_PROJECT.md).
 
 ### Install from a local directory
 
@@ -40,56 +49,9 @@ cd superset-data-entry-plugin
 pip install --no-deps -e .
 ```
 
-### Configure Superset
+### Configure Superset (manual option)
 
-Add to your `superset_config.py`:
-
-```python
-import os
-
-DATA_ENTRY_DB_CONFIG = {
-    'host': os.environ.get('SUPERSET_APPBASE_DB_HOST', 'localhost'),
-    'port': int(os.environ.get('SUPERSET_APPBASE_DB_PORT', '5432')),
-    'username': os.environ.get('SUPERSET_APPBASE_DB_USER', 'your_user'),
-    'password': os.environ.get('SUPERSET_APPBASE_DB_PASSWORD', 'your_password'),
-    'database': os.environ.get('SUPERSET_APPBASE_DB_NAME', 'your_database'),
-}
-
-def FLASK_APP_MUTATOR(app):
-    try:
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from superset_init_plugin import init_data_entry_plugin
-        init_data_entry_plugin(app)
-    except Exception as e:
-        print(f"⚠️  Failed to load data entry plugin: {e}")
-```
-
-Create `superset_init_plugin.py` in the same directory as `superset_config.py`:
-
-```python
-import logging
-logger = logging.getLogger(__name__)
-
-def init_data_entry_plugin(app):
-    try:
-        from superset_data_entry import register_plugin
-        plugin_instance = register_plugin(app.appbuilder)
-        logger.info("✅ Data Entry Plugin initialized successfully")
-        return plugin_instance
-    except Exception as e:
-        logger.error(f"❌ Plugin initialization failed: {e}")
-        return None
-```
-
-### Run database migrations
-
-Run the SQL in the `migrations/` folder on your PostgreSQL (the one in `DATA_ENTRY_DB_CONFIG`):
-
-- `migrations/V6__create_form_configurations_table.sql`
-- `migrations/V7__create_form_fields_table.sql`
-
-Then restart Superset.
+If you prefer not to use the setup script, add the `FLASK_APP_MUTATOR` to `superset_config.py` and create `superset_init_plugin.py` in the same directory (see [SETUP_NEW_PROJECT.md](SETUP_NEW_PROJECT.md) for the exact snippet and init file content). The plugin uses Superset's database (`SQLALCHEMY_DATABASE_URI`); **migrations run automatically** on first plugin load — no need to run SQL by hand.
 
 ## Usage
 
