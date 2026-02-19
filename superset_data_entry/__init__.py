@@ -2,9 +2,6 @@
 Data Entry Plugin for Apache Superset
 Adds dynamic form management capabilities to Superset
 """
-from flask import Flask, Blueprint
-from flask_appbuilder import AppBuilder
-from sqlalchemy import create_engine, text
 import logging
 import os
 
@@ -24,7 +21,7 @@ class SupersetDataEntryPlugin:
     Adds custom views and API endpoints for data entry forms
     """
     
-    def __init__(self, appbuilder: AppBuilder):
+    def __init__(self, appbuilder):
         """
         Initialize and register the plugin
         
@@ -69,6 +66,7 @@ class SupersetDataEntryPlugin:
         Register a Flask Blueprint to serve plugin static files (JS, CSS).
         This avoids inline scripts which are blocked by Superset's CSP.
         """
+        from flask import Blueprint
         static_bp = Blueprint(
             'data_entry_static',
             __name__,
@@ -176,7 +174,7 @@ class SupersetDataEntryPlugin:
             raise
 
 
-def register_plugin(appbuilder: AppBuilder):
+def register_plugin(appbuilder):
     """
     Entry point for plugin registration
     Called by Superset during initialization via FLASK_APP_MUTATOR
@@ -193,4 +191,8 @@ def register_plugin(appbuilder: AppBuilder):
             from superset_data_entry import register_plugin
             register_plugin(app.appbuilder)
     """
+    # Lazy import to avoid requiring Flask/AppBuilder at module import time (for setup_cli)
+    from flask_appbuilder import AppBuilder
+    if not isinstance(appbuilder, AppBuilder):
+        raise TypeError("appbuilder must be an AppBuilder instance")
     return SupersetDataEntryPlugin(appbuilder)
