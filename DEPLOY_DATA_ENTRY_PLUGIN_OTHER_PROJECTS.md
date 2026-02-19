@@ -265,7 +265,7 @@ To pre-create forms in another project, add a migration (e.g. `V10__seed_my_form
 |------|----------------------|
 | This repo root | Package for install: `pip install .` or install from private Git (see above). |
 | `superset_init_plugin.py` | Not in this repo; see "Plugin init file" section in this doc for contents. Copy into the other project next to their `superset_config.py`. |
-| `superset_config.py` | Reference for `FLASK_APP_MUTATOR` and `DATA_ENTRY_DB_CONFIG` only (merge into their config). |
+| `platform/superset_config.py` | Reference for `FLASK_APP_MUTATOR` and `DATA_ENTRY_DB_CONFIG` only (don’t copy whole file; merge config). |
 | `migrations/V6__create_form_configurations_table.sql` | Run on their DB. |
 | `migrations/V7__create_form_fields_table.sql` | Run on their DB. |
 

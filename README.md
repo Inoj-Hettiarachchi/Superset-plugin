@@ -13,8 +13,6 @@ A Flask-AppBuilder plugin that adds dynamic data entry form capabilities to Apac
 
 ## Installation
 
-**Pushing this project to a private GitHub repo and installing via pip:** see **[GITHUB_SETUP.md](GITHUB_SETUP.md)**.
-
 ### Install from private Git (Option A)
 
 Use the same Python environment as Superset. Replace `YOUR_ORG` and repo name with your GitHub org and repo.
