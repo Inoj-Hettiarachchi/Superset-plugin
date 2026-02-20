@@ -1,6 +1,8 @@
 # Deploy Data Entry Plugin in Other Projects
 
-This guide explains how to use the Superset Data Entry Plugin in **any other project** that runs Apache Superset. The plugin stores form definitions and submitted data in **your project’s PostgreSQL** (the database you configure).
+This guide explains how to use the Superset Data Entry Plugin in **any other project** that runs Apache Superset. The plugin uses **Superset's database** (`SQLALCHEMY_DATABASE_URI`); **migrations run automatically** on first plugin load.
+
+**Quick setup:** See **[SETUP_NEW_PROJECT.md](SETUP_NEW_PROJECT.md)** and use `superset-data-entry-setup`.
 
 ---
 
@@ -20,17 +22,16 @@ pip install --no-deps "git+https://<TOKEN>@github.com/YOUR_ORG/superset-data-ent
 pip install --no-deps "git+ssh://git@github.com/YOUR_ORG/superset-data-entry-plugin.git@main"
 ```
 
-Then add the init hook, config, and run migrations (see below).
+Then run `superset-data-entry-setup`, add the printed snippet to `superset_config.py`, and restart. Migrations run automatically on first load.
 
 ---
 
 ## What You Need in the Other Project
 
-1. **The plugin package** (copy from this repo or install via pip).
-2. **Superset configuration** – hook to register the plugin.
-3. **Plugin init file** – `superset_init_plugin.py`.
-4. **Database** – run migrations so `form_configurations` and `form_fields` exist in Superset's database.
-5. **Optional:** Custom validators or seed forms (migrations or UI).
+1. **The plugin package** (install via pip from Git, or copy from this repo).
+2. **Superset configuration** – `FLASK_APP_MUTATOR` hook and `superset_init_plugin.py` (generate with `superset-data-entry-setup`).
+3. **Database** – plugin tables (`form_configurations`, `form_fields`) are created **automatically** on first plugin load; no manual migration step required.
+4. **Optional:** Custom validators or seed forms (migrations or UI).
 
 ---
 
@@ -50,7 +51,7 @@ From this repo, copy into the other project:
   `platform/superset_init_plugin.py`  
   → same directory as their `superset_config.py` (e.g. `other-project/superset/superset_init_plugin.py` or wherever Superset is configured).
 
-### 2. Point Superset at your project’s database
+### 2. Register the plugin
 
 In the other project’s **`superset_config.py`** add (or merge with existing config):
 
@@ -73,7 +74,7 @@ def FLASK_APP_MUTATOR(app):
 
 ### 3. Add the init file
 
-Create or copy **`superset_init_plugin.py`** in the **same directory as `superset_config.py`**:
+Run **`superset-data-entry-setup`** (from the directory that contains `superset_config.py`, or use `--config-dir`) to create `superset_init_plugin.py`. Or create/copy it manually in the **same directory as `superset_config.py`**:
 
 ```python
 import logging
@@ -98,14 +99,20 @@ def init_data_entry_plugin(app):
 
 **If Superset runs in Docker** (e.g. custom Dockerfile):
 
-- Copy the plugin into the image and install in the same venv Superset uses:
+- Install from Git (recommended):
+
+```dockerfile
+RUN pip install --no-deps "git+https://github.com/YOUR_ORG/Superset-plugin.git@main"
+```
+
+- Or copy the plugin and install locally:
 
 ```dockerfile
 COPY superset-data-entry-plugin /tmp/superset-data-entry-plugin
-RUN /app/.venv/bin/pip install --no-deps -e /tmp/superset-data-entry-plugin
+RUN pip install --no-deps -e /tmp/superset-data-entry-plugin
 ```
 
-- Copy `superset_config.py` and `superset_init_plugin.py` to where Superset loads them (e.g. `/app/superset/` or a mounted path in `sys.path`).
+- Ensure `superset_config.py` and `superset_init_plugin.py` are in the image or mounted (e.g. `/app/superset/`).
 
 **If Superset runs on the host (venv):**
 
@@ -114,23 +121,9 @@ cd /path/to/superset-data-entry-plugin
 pip install --no-deps -e .
 ```
 
-### 5. Create plugin tables in your project’s database
+### 5. Database (migrations run automatically)
 
-Run these migrations **against the same database** you set in `SQLALCHEMY_DATABASE_URI` (your project’s PostgreSQL). You can use Flyway, raw SQL, or your app’s migration runner.
-
-Copy and run the SQL from this repo's **`migrations/`** folder:
-
-- **`migrations/V6__create_form_configurations_table.sql`**
-- **`migrations/V7__create_form_fields_table.sql`**
-
-Example (replace with Superset's database name and user):
-
-```bash
-psql -U your_user -d your_database -f migrations/V6__create_form_configurations_table.sql
-psql -U your_user -d your_database -f migrations/V7__create_form_fields_table.sql
-```
-
-After this, the plugin will create **data tables** (e.g. `profile_details`, `vessel_dp_shift_config`) when you create forms with “Create table” / auto-create enabled.
+**No manual step required.** On first plugin load, the plugin creates `form_configurations` and `form_fields` in Superset's database automatically. Optionally run the SQL in `superset_data_entry/migrations/` or root `migrations/` yourself if needed.
 
 ### 6. Restart Superset
 
@@ -141,7 +134,7 @@ After this, the plugin will create **data tables** (e.g. `profile_details`, `ves
 
 - Open Superset → top menu should show **Data Entry**.
 - Go to **Data Entry → Data Entry Forms** (list may be empty).
-- **Data Entry → Configure Forms** (admin) → create a test form and add a field → Save. Then **Data Entry Forms** → your form → **Enter Data** → submit. Data will be in the table you set for that form in **your project’s PostgreSQL**.
+- **Data Entry → Configure Forms** (admin) → create a test form and add a field → Save. Then **Data Entry Forms** → your form → **Enter Data** → submit. Data will be in the table you set for that form in **Superset's database**.
 
 ---
 
@@ -175,13 +168,13 @@ pip install --no-deps /path/to/superset_data_entry_plugin-1.0.0-*.whl
 
 ### 3. Config and init (same as Option A)
 
-- Add **`SQLALCHEMY_DATABASE_URI`** and **`FLASK_APP_MUTATOR`** to that project’s `superset_config.py` (pointing to **that project’s** PostgreSQL).
-- Add **`superset_init_plugin.py`** next to `superset_config.py` (same content as in Option A).
+- Add **`FLASK_APP_MUTATOR`** to that project's `superset_config.py` (plugin uses Superset's existing `SQLALCHEMY_DATABASE_URI`).
+- Add **`superset_init_plugin.py`** next to `superset_config.py` (run `superset-data-entry-setup` or use same content as in Option A).
 - Ensure `superset_config.py` is loaded by Superset (same path or env as in that project).
 
 ### 4. Database (same as Option A)
 
-Run **V6** and **V7** migrations on **that project’s** database (the one in `SQLALCHEMY_DATABASE_URI`).
+No manual migration step; plugin creates tables on first load.
 
 ### 5. Restart and verify (same as Option A)
 
@@ -194,20 +187,18 @@ Restart Superset and check **Data Entry** menu and form create/enter/view flow.
 | Item | Where | Purpose |
 |------|--------|--------|
 | `FLASK_APP_MUTATOR` | `superset_config.py` | Calls `init_data_entry_plugin(app)` so the plugin registers with Superset. |
-| `superset_init_plugin.py` | Same dir as `superset_config.py` (or on `sys.path`) | Imports `superset_data_entry` and calls `register_plugin(app.appbuilder)`. |
-| V6 + V7 migrations | Your project’s DB (same as `SQLALCHEMY_DATABASE_URI`) | Create `form_configurations` and `form_fields`. |
+| `superset_init_plugin.py` | Same dir as `superset_config.py` | Generate with `superset-data-entry-setup`, or copy content from this doc. |
+| Plugin tables | Superset's database | Created **automatically** on first load (`form_configurations`, `form_fields`). |
 
 ---
 
 ## Using it with other projects – checklist
 
-- [ ] Plugin code available (copied or pip-installed) in the environment where Superset runs.
-- [ ] `superset_config.py` has `SQLALCHEMY_DATABASE_URI` pointing to **that project’s** PostgreSQL.
+- [ ] Plugin installed (pip from Git or copy) in the environment where Superset runs (e.g. inside Docker image).
 - [ ] `superset_config.py` has `FLASK_APP_MUTATOR` that calls `init_data_entry_plugin(app)`.
 - [ ] `superset_init_plugin.py` is on the Python path and imports `register_plugin`.
-- [ ] V6 and V7 migrations run on Superset's database (`SQLALCHEMY_DATABASE_URI`).
-- [ ] Superset restarted after config/plugin changes.
-- [ ] In Superset: **Data Entry** menu visible; create a form and submit a record; check the table in Superset's database.
+- [ ] Superset restarted after config/plugin changes (migrations run automatically on first load).
+- [ ] In Superset: **Data Entry** menu visible; create a form and submit a record; data stored in Superset's database.
 
 ---
 
@@ -239,7 +230,7 @@ To pre-create forms in another project, add a migration (e.g. `V10__seed_my_form
   Define `SQLALCHEMY_DATABASE_URI` in `superset_config.py` and ensure all keys (`host`, `port`, `username`, `password`, `database`) are set (e.g. via env).
 
 - **“Plugin tables not found”**  
-  Run V6 and V7 on Superset's database (the same database configured in `SQLALCHEMY_DATABASE_URI`, usually `public` schema).
+  Tables are created automatically on first load. If you see this briefly, wait for “Migrations completed”. If it persists, ensure Superset's database is reachable and `SQLALCHEMY_DATABASE_URI` is set.
 
 - **Form submit / “Connection” or “commit” errors**  
   Plugin uses SQLAlchemy 2–style `engine.begin()`. Ensure the project’s Superset/env uses a compatible SQLAlchemy version.
@@ -254,9 +245,8 @@ To pre-create forms in another project, add a migration (e.g. `V10__seed_my_form
 | Path | Use in other project |
 |------|----------------------|
 | This repo root | Package for install: `pip install .` or install from private Git (see above). |
-| `superset_init_plugin.py` | Not in this repo; see "Plugin init file" section in this doc for contents. Copy into the other project next to their `superset_config.py`. |
-| `platform/superset_config.py` | Reference for `FLASK_APP_MUTATOR` and `SQLALCHEMY_DATABASE_URI` only (don’t copy whole file; merge config). |
-| `migrations/V6__create_form_configurations_table.sql` | Run on Superset's database. |
-| `migrations/V7__create_form_fields_table.sql` | Run on Superset's database. |
+| `superset_init_plugin.py` | Generated by `superset-data-entry-setup`, or see "Plugin init file" in this doc. Place next to `superset_config.py`. |
+| `superset_config.py` (snippet) | Add `FLASK_APP_MUTATOR` only; plugin uses Superset's existing `SQLALCHEMY_DATABASE_URI`. |
+| `migrations/` (root or `superset_data_entry/migrations/`) | Bundled in package; plugin runs them automatically on first load. Optional: run manually if needed. |
 
-Once these are in place, the plugin runs in that project and all form data is stored in **that project’s PostgreSQL** (the one in `SQLALCHEMY_DATABASE_URI`).
+Once these are in place, the plugin runs in that project and all form data is stored in **Superset's database** (`SQLALCHEMY_DATABASE_URI`).
