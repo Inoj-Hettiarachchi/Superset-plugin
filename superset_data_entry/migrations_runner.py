@@ -3,6 +3,7 @@ Runs plugin migrations from package-bundled SQL files.
 Used automatically on plugin load when required tables are missing.
 """
 import logging
+import os
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
@@ -14,16 +15,36 @@ MIGRATION_FILES = [
 
 
 def _read_migration_sql(filename: str) -> str:
-    """Read SQL from package migrations folder."""
+    """Read SQL from package migrations folder (importlib.resources or filesystem fallback)."""
     try:
         from importlib.resources import files
         pkg = files("superset_data_entry")
         path = pkg / "migrations" / filename
         return path.read_text(encoding="utf-8")
     except ImportError:
-        # Python 3.8: use read_text
-        from importlib.resources import read_text
-        return read_text("superset_data_entry.migrations", filename, encoding="utf-8")
+        try:
+            from importlib.resources import read_text
+            return read_text("superset_data_entry.migrations", filename, encoding="utf-8")
+        except Exception:
+            pass
+    # Fallback: read from filesystem relative to this package (e.g. editable install)
+    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    fallback_path = os.path.join(pkg_dir, "migrations", filename)
+    if os.path.isfile(fallback_path):
+        with open(fallback_path, encoding="utf-8") as f:
+            return f.read()
+    raise FileNotFoundError(f"Migration file not found: {filename} (tried package resources and {fallback_path})")
+
+
+def _strip_sql_comments(segment: str) -> str:
+    """Remove leading/trailing full-line comments and leave executable SQL."""
+    lines = []
+    for line in segment.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("--"):
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
 
 
 def run_migrations(engine):
@@ -34,15 +55,22 @@ def run_migrations(engine):
     for filename in MIGRATION_FILES:
         try:
             sql = _read_migration_sql(filename)
-            # Execute each statement (split by semicolon, skip comments/empty)
-            statements = [
-                s.strip() for s in sql.split(";")
-                if s.strip() and not s.strip().startswith("--")
-            ]
+            # Split by semicolon; strip comments from each segment, then run non-empty statements.
+            # (Previously we skipped any segment that started with "--", which dropped CREATE TABLEs
+            # that had leading comment lines in the same segment.)
+            segments = [s.strip() for s in sql.split(";") if s.strip()]
+            statements = []
+            for seg in segments:
+                stmt = _strip_sql_comments(seg)
+                if stmt:
+                    statements.append(stmt)
+            if not statements:
+                logger.warning(f"No executable statements in {filename}; skipping")
+                continue
+            logger.info(f"Applying {filename} ({len(statements)} statement(s))")
             with engine.begin() as conn:
                 for stmt in statements:
-                    if stmt:
-                        conn.execute(text(stmt))
+                    conn.execute(text(stmt))
             logger.info(f"✅ Migration applied: {filename}")
         except Exception as e:
             logger.error(f"❌ Migration failed {filename}: {e}")
