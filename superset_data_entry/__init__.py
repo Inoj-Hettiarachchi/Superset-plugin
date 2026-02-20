@@ -96,7 +96,7 @@ class SupersetDataEntryPlugin:
                 f"Failed to import create_engine from sqlalchemy: {e}. "
                 "This may indicate a SQLAlchemy version compatibility issue."
             )
-        
+
         # Get Superset's database URI
         uri = self.app.config.get('SQLALCHEMY_DATABASE_URI')
         
