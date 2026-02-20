@@ -3,8 +3,10 @@ Flask-AppBuilder views for data entry plugin
 Provides web UI for form management and data entry
 """
 from flask_appbuilder import BaseView, expose, has_access
-from flask import render_template, request, jsonify, flash, redirect, url_for
+from flask import render_template, request, jsonify, flash, redirect, url_for, Response
 from sqlalchemy.orm import sessionmaker
+from datetime import datetime
+import json
 import logging
 import os
 
@@ -303,7 +305,50 @@ class DataGridView(BaseView):
         finally:
             if session:
                 session.close()
-    
+
+    @expose('/<int:form_id>/seed')
+    @has_access
+    def seed_download(self, form_id):
+        """Download form data as a JSON seed file."""
+        session = None
+        try:
+            session, engine = get_db_session()
+            form_config = FormConfigDAO.get_by_id(session, form_id)
+            if not form_config:
+                flash("Form not found", "danger")
+                return redirect('/data-entry/forms/list/')
+            records = DataEntryDAO.get_all_for_export(engine, form_config.table_name)
+
+            def _serialize(obj):
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+            payload = {
+                "form": {
+                    "id": form_config.id,
+                    "title": form_config.title,
+                    "name": form_config.name,
+                    "table_name": form_config.table_name,
+                },
+                "records": records,
+            }
+            json_str = json.dumps(payload, indent=2, default=_serialize)
+            safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in form_config.name)
+            filename = f"{safe_name}_seed.json"
+            return Response(
+                json_str,
+                mimetype="application/json",
+                headers={"Content-Disposition": f"attachment; filename={filename}"},
+            )
+        except Exception as e:
+            logger.error(f"Error generating seed file: {e}")
+            flash(f"Error: {str(e)}", "danger")
+            return redirect(request.referrer or '/data-entry/forms/list/')
+        finally:
+            if session:
+                session.close()
+
     @expose('/<int:form_id>/delete/<int:record_id>', methods=['POST'])
     @has_access
     def delete(self, form_id, record_id):

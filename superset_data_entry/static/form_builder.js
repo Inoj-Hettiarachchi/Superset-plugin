@@ -45,11 +45,49 @@ document.addEventListener('DOMContentLoaded', function() {
                             '</button>' +
                         '</div>' +
                     '</div>' +
+                    '<div class="field-options-wrap mt-2" style="display:none">' +
+                        '<label class="small text-muted">Select options (value shown in dropdown)</label>' +
+                        '<div class="field-options-list"></div>' +
+                        '<button type="button" class="btn btn-sm btn-outline-secondary add-option-btn">' +
+                            '<i class="fa fa-plus"></i> Add option' +
+                        '</button>' +
+                    '</div>' +
                 '</div>' +
             '</div>';
             document.getElementById('fieldsContainer').insertAdjacentHTML('beforeend', fieldHtml);
         });
     }
+
+    function getOptionRowHtml() {
+        return '<div class="input-group input-group-sm mb-1 option-row">' +
+            '<input type="text" class="form-control option-value" placeholder="Value">' +
+            '<input type="text" class="form-control option-label" placeholder="Label (optional)">' +
+            '<div class="input-group-append">' +
+                '<button type="button" class="btn btn-outline-danger remove-option"><i class="fa fa-times"></i></button>' +
+            '</div>' +
+        '</div>';
+    }
+
+    // Toggle options UI when field type changes to/from Select
+    document.addEventListener('change', function(e) {
+        var typeSelect = e.target && e.target.classList && e.target.classList.contains('field-type');
+        if (typeSelect) {
+            var wrap = typeSelect.closest('.field-card').querySelector('.field-options-wrap');
+            if (wrap) wrap.style.display = typeSelect.value === 'select' ? 'block' : 'none';
+        }
+    });
+
+    // Add option row (for Select fields)
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('.add-option-btn')) {
+            var btn = e.target.closest('.add-option-btn');
+            var list = btn.previousElementSibling;
+            if (list && list.classList.contains('field-options-list')) list.insertAdjacentHTML('beforeend', getOptionRowHtml());
+        }
+        if (e.target.closest('.remove-option')) {
+            e.target.closest('.option-row').remove();
+        }
+    });
 
     // Remove field
     document.addEventListener('click', function(e) {
@@ -77,14 +115,31 @@ document.addEventListener('DOMContentLoaded', function() {
             var fields = [];
             document.querySelectorAll('.field-card').forEach(function(card) {
                 var fieldId = card.getAttribute('data-field-id');
-                fields.push({
+                var fieldType = card.querySelector('.field-type').value;
+                var fieldData = {
                     id: (fieldId && fieldId.indexOf('new-') === 0) ? null : fieldId,
                     field_name: card.querySelector('.field-name').value,
                     field_label: card.querySelector('.field-label').value,
-                    field_type: card.querySelector('.field-type').value,
+                    field_type: fieldType,
                     field_order: parseInt(card.querySelector('.field-order').value),
                     is_required: card.querySelector('.field-required').checked
-                });
+                };
+                if (fieldType === 'select') {
+                    var options = [];
+                    var optionsList = card.querySelector('.field-options-list');
+                    if (optionsList) {
+                        optionsList.querySelectorAll('.option-row').forEach(function(row) {
+                            var val = row.querySelector('.option-value');
+                            var lbl = row.querySelector('.option-label');
+                            var v = val ? val.value.trim() : '';
+                            if (v !== '') {
+                                options.push({ value: v, label: (lbl && lbl.value.trim()) ? lbl.value.trim() : v });
+                            }
+                        });
+                    }
+                    fieldData.options = options;
+                }
+                fields.push(fieldData);
             });
             
             var formData = {

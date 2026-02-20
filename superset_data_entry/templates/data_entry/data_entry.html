@@ -46,7 +46,7 @@
                                     <option value="">-- Select --</option>
                                     {% if field.options %}
                                         {% for option in field.options %}
-                                        <option value="{{ option.value }}">{{ option.label }}</option>
+                                        <option value="{{ option.value }}">{{ option.label|default(option.value) }}</option>
                                         {% endfor %}
                                     {% endif %}
                                 </select>
