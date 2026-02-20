@@ -121,6 +121,25 @@
                                             </button>
                                         </div>
                                     </div>
+                                    <div class="field-options-wrap mt-2" style="{{ 'display:block' if field.field_type == 'select' else 'display:none' }}">
+                                        <label class="small text-muted">Select options (value shown in dropdown)</label>
+                                        <div class="field-options-list">
+                                            {% if field.field_type == 'select' and field.options %}
+                                            {% for opt in field.options %}
+                                            <div class="input-group input-group-sm mb-1 option-row">
+                                                <input type="text" class="form-control option-value" placeholder="Value" value="{{ opt.value|default('', true) }}">
+                                                <input type="text" class="form-control option-label" placeholder="Label (optional)" value="{{ opt.label|default('', true) }}">
+                                                <div class="input-group-append">
+                                                    <button type="button" class="btn btn-outline-danger remove-option"><i class="fa fa-times"></i></button>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                            {% endif %}
+                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary add-option-btn">
+                                            <i class="fa fa-plus"></i> Add option
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             {% endfor %}

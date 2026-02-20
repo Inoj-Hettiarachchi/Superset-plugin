@@ -185,6 +185,21 @@ class DataEntryDAO:
             records = [dict(row._mapping) for row in result]
             
             return records, total
+
+    @staticmethod
+    def get_all_for_export(engine, table_name: str, max_records: int = 50_000) -> List[Dict]:
+        """
+        Get all records from a data table for export/seed (no pagination).
+        Limited to max_records to avoid excessive memory use.
+        """
+        with engine.connect() as conn:
+            query = text(f"""
+                SELECT * FROM {table_name}
+                ORDER BY id ASC
+                LIMIT :limit
+            """)
+            result = conn.execute(query, {'limit': max_records})
+            return [dict(row._mapping) for row in result]
     
     @staticmethod
     def get_by_id(engine, table_name: str, record_id: int) -> Optional[Dict]:
