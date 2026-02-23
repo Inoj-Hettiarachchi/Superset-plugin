@@ -6,6 +6,8 @@ from flask_appbuilder import BaseView, expose, has_access
 from flask import render_template, request, jsonify, flash, redirect, url_for, Response
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
+import csv
+import io
 import json
 import logging
 import os
@@ -343,6 +345,63 @@ class DataGridView(BaseView):
             )
         except Exception as e:
             logger.error(f"Error generating seed file: {e}")
+            flash(f"Error: {str(e)}", "danger")
+            return redirect(request.referrer or '/data-entry/forms/list/')
+        finally:
+            if session:
+                session.close()
+
+    @expose('/<int:form_id>/csv')
+    @has_access
+    def csv_download(self, form_id):
+        """Download form data as CSV."""
+        session = None
+        try:
+            session, engine = get_db_session()
+            form_config = FormConfigDAO.get_by_id(session, form_id)
+            if not form_config:
+                flash("Form not found", "danger")
+                return redirect('/data-entry/forms/list/')
+            records = DataEntryDAO.get_all_for_export(engine, form_config.table_name)
+
+            def cell_value(val):
+                if val is None:
+                    return ""
+                if isinstance(val, datetime):
+                    return val.strftime("%Y-%m-%d %H:%M:%S")
+                if isinstance(val, bool):
+                    return "Yes" if val else "No"
+                return str(val)
+
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            # Header: ID, then form fields (by label), then Created By, Created At
+            fields_sorted = sorted(form_config.fields, key=lambda x: x.field_order)
+            field_names = [f.field_name for f in fields_sorted]
+            headers = ["ID"] + [f.field_label for f in fields_sorted] + ["Created By", "Created At", "Location ID"]
+            writer.writerow(headers)
+
+            for rec in records:
+                row = [cell_value(rec.get("id"))]
+                for fn in field_names:
+                    row.append(cell_value(rec.get(fn)))
+                row.append(cell_value(rec.get("created_by")))
+                row.append(cell_value(rec.get("created_at")))
+                row.append(cell_value(rec.get("location_id")))
+                writer.writerow(row)
+
+            safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in form_config.name)
+            filename = f"{safe_name}.csv"
+            output = buf.getvalue()
+            # UTF-8 BOM for Excel
+            bom = "\ufeff"
+            return Response(
+                bom + output,
+                mimetype="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f"attachment; filename={filename}"},
+            )
+        except Exception as e:
+            logger.error(f"Error generating CSV: {e}")
             flash(f"Error: {str(e)}", "danger")
             return redirect(request.referrer or '/data-entry/forms/list/')
         finally:

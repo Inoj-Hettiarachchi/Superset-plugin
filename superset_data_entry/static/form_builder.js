@@ -70,22 +70,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Toggle options UI when field type changes to/from Select
     document.addEventListener('change', function(e) {
-        var typeSelect = e.target && e.target.classList && e.target.classList.contains('field-type');
-        if (typeSelect) {
-            var wrap = typeSelect.closest('.field-card').querySelector('.field-options-wrap');
-            if (wrap) wrap.style.display = typeSelect.value === 'select' ? 'block' : 'none';
-        }
+        if (!e.target || !e.target.classList || !e.target.classList.contains('field-type')) return;
+        var card = e.target.closest('.field-card');
+        if (!card) return;
+        var wrap = card.querySelector('.field-options-wrap');
+        if (wrap) wrap.style.display = e.target.value === 'select' ? 'block' : 'none';
     });
 
     // Add option row (for Select fields)
     document.addEventListener('click', function(e) {
-        if (e.target.closest('.add-option-btn')) {
-            var btn = e.target.closest('.add-option-btn');
-            var list = btn.previousElementSibling;
-            if (list && list.classList.contains('field-options-list')) list.insertAdjacentHTML('beforeend', getOptionRowHtml());
+        var addBtn = e.target && e.target.closest && e.target.closest('.add-option-btn');
+        if (addBtn) {
+            var wrap = addBtn.closest('.field-options-wrap');
+            var list = wrap ? wrap.querySelector('.field-options-list') : null;
+            if (list) list.insertAdjacentHTML('beforeend', getOptionRowHtml());
+            return;
         }
-        if (e.target.closest('.remove-option')) {
-            e.target.closest('.option-row').remove();
+        var removeBtn = e.target && e.target.closest && e.target.closest('.remove-option');
+        if (removeBtn) {
+            var row = removeBtn.closest('.option-row');
+            if (row) row.remove();
         }
     });
 
@@ -155,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 fields: fields
             };
             
-            fetch('/data-entry/builder/save', {
+            fetch('/data-entry/forms/builder/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
