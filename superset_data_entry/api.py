@@ -79,33 +79,17 @@ def get_form(form_id):
 @has_access
 def create_form():
     """
-    Create new form configuration (Admin only)
-    
-    Request body:
-        {
-            "name": "vessel_shift_config",
-            "title": "Vessel Shift Configuration",
-            "description": "...",
-            "table_name": "vessel_shift_config",
-            "fields": [...]
-        }
-    
-    Returns:
-        JSON object with created form
+    Create new form configuration (any user; location_id must be in allowed or empty).
     """
     session = None
     try:
-        # Check admin permission
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         data = request.json
-        
+
         # Validate required fields
         required = ['name', 'title', 'table_name']
         if not all(field in data for field in required):
             return jsonify({'error': f'Missing required fields: {required}'}), 400
-        
+
         session, engine = get_db_session()
 
         # Validate location_id if provided (must be in allowed for non-admin)
@@ -143,19 +127,10 @@ def create_form():
 @has_access
 def update_form(form_id):
     """
-    Update form configuration (Admin only)
-    
-    Args:
-        form_id: Form ID
-    
-    Returns:
-        JSON object with updated form
+    Update form configuration (any user; form must be in allowed locations; location_id validated).
     """
     session = None
     try:
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         data = request.json
         session, engine = get_db_session()
         allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
@@ -184,22 +159,17 @@ def update_form(form_id):
 @has_access
 def delete_form(form_id):
     """
-    Delete form configuration (Admin only)
-    Does NOT delete the data table
-    
-    Args:
-        form_id: Form ID
-    
-    Returns:
-        Success message
+    Delete form configuration (any user; form must be in allowed locations).
+    Does NOT delete the data table.
     """
     session = None
     try:
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         session, engine = get_db_session()
         allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+
+        form = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
+        if not form:
+            return jsonify({'error': 'Form not found'}), 404
 
         success = FormConfigDAO.delete(session, form_id)
         if not success:
@@ -223,19 +193,10 @@ def delete_form(form_id):
 @has_access
 def add_field(form_id):
     """
-    Add field to form (Admin only)
-    
-    Args:
-        form_id: Form ID
-    
-    Returns:
-        JSON object with created field
+    Add field to form (any user; form must be in allowed locations).
     """
     session = None
     try:
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         data = request.json
         session, engine = get_db_session()
         allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)

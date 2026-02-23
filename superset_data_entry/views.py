@@ -83,11 +83,7 @@ class FormBuilderView(BaseView):
     @expose('/<int:form_id>')
     @has_access
     def build(self, form_id=None):
-        """Form builder interface (admin only; when loading form by id, validate location access)."""
-        if not is_admin():
-            flash("Admin access required", "danger")
-            return redirect('/data-entry/forms/list/')
-
+        """Form builder: any user can create or edit forms (editing restricted by RLS location access)."""
         session = None
         try:
             from flask import g
@@ -117,10 +113,7 @@ class FormBuilderView(BaseView):
     @expose('/save', methods=['POST'])
     @has_access
     def save(self):
-        """Save form configuration with fields (admin only; location_id validated against allowed)."""
-        if not is_admin():
-            return jsonify({'error': 'Admin access required'}), 403
-
+        """Save form configuration with fields (any user; location_id validated against allowed)."""
         session = None
         try:
             from flask import g
@@ -128,7 +121,7 @@ class FormBuilderView(BaseView):
             session, engine = get_db_session()
             allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
 
-            # Validate location_id for create/update: only allow if in allowed_location_ids (or None for admin)
+            # Validate location_id for create/update: only allow if in allowed_location_ids (or None)
             if 'location_id' in data and data['location_id']:
                 loc = data['location_id']
                 if allowed_location_ids is not None and loc not in allowed_location_ids:
