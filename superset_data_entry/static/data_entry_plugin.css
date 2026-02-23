@@ -1,5 +1,26 @@
 /* Data Entry Plugin - UI enhancements */
 
+/* --- Simplify navbar: show only Home (on plugin pages) --- */
+.navbar .navbar-header {
+    display: none !important;
+}
+/* Hide right-side menu first (user / admin dropdown) so it doesn't get the Home rule */
+.navbar .navbar-nav.navbar-right,
+.navbar .navbar-nav.ms-auto,
+.navbar .navbar-collapse .dropdown.pull-right {
+    display: none !important;
+}
+/* Hide all top-level menu items in the main (left) nav */
+.navbar .navbar-nav > li {
+    display: none !important;
+}
+/* Show only the menu item that is the Home link */
+.navbar .navbar-nav > li:has(a[href="/"]),
+.navbar .navbar-nav > li:has(a[href="/superset/"]),
+.navbar .navbar-nav > li:has(a[href="/dashboard/list/"]) {
+    display: list-item !important;
+}
+
 /* Form list cards */
 .data-entry-form-card {
     border: 1px solid rgba(0, 0, 0, 0.08);
