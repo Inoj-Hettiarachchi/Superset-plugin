@@ -10,6 +10,7 @@ import logging
 from .dao import FormConfigDAO, FormFieldDAO, DataEntryDAO
 from .validation import ValidationEngine
 from .table_manager import TableManager
+from . import rls as rls_module
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +38,12 @@ def is_admin(user):
 @data_entry_api_bp.route('/forms', methods=['GET'])
 @has_access
 def list_forms():
-    """
-    List all active forms
-    
-    Returns:
-        JSON array of form configurations
-    """
+    """List all active forms (filtered by RLS location_ids when not admin)."""
     session = None
     try:
         session, engine = get_db_session()
-        forms = FormConfigDAO.get_all_active(session)
+        allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+        forms = FormConfigDAO.get_all_active(session, location_ids=allowed_location_ids)
         return jsonify([f.to_dict() for f in forms])
     except Exception as e:
         logger.error(f"Error listing forms: {e}")
@@ -59,23 +56,16 @@ def list_forms():
 @data_entry_api_bp.route('/forms/<int:form_id>', methods=['GET'])
 @has_access
 def get_form(form_id):
-    """
-    Get form configuration with fields
-    
-    Args:
-        form_id: Form ID
-    
-    Returns:
-        JSON object with form configuration and fields
-    """
+    """Get form configuration with fields (form must be in user's allowed locations)."""
     session = None
     try:
         session, engine = get_db_session()
-        form = FormConfigDAO.get_by_id(session, form_id)
-        
+        allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+        form = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
+
         if not form:
             return jsonify({'error': 'Form not found'}), 404
-        
+
         return jsonify(form.to_dict(include_fields=True))
     except Exception as e:
         logger.error(f"Error getting form {form_id}: {e}")
@@ -117,7 +107,13 @@ def create_form():
             return jsonify({'error': f'Missing required fields: {required}'}), 400
         
         session, engine = get_db_session()
-        
+
+        # Validate location_id if provided (must be in allowed for non-admin)
+        if data.get('location_id'):
+            allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+            if allowed_location_ids is not None and data['location_id'] not in allowed_location_ids:
+                return jsonify({'error': 'location_id not allowed for your role'}), 403
+
         # Check if form with same name exists
         existing = FormConfigDAO.get_by_name(session, data['name'])
         if existing:
@@ -162,10 +158,17 @@ def update_form(form_id):
         
         data = request.json
         session, engine = get_db_session()
-        
-        form = FormConfigDAO.update(session, form_id, data)
+        allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+
+        form = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
+
+        if data.get('location_id') is not None and allowed_location_ids is not None:
+            if data['location_id'] and data['location_id'] not in allowed_location_ids:
+                return jsonify({'error': 'location_id not allowed for your role'}), 403
+
+        form = FormConfigDAO.update(session, form_id, data)
         
         return jsonify(form.to_dict(include_fields=True))
         
@@ -196,7 +199,8 @@ def delete_form(form_id):
             return jsonify({'error': 'Admin access required'}), 403
         
         session, engine = get_db_session()
-        
+        allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+
         success = FormConfigDAO.delete(session, form_id)
         if not success:
             return jsonify({'error': 'Form not found'}), 404
@@ -234,12 +238,12 @@ def add_field(form_id):
         
         data = request.json
         session, engine = get_db_session()
-        
-        # Verify form exists
-        form = FormConfigDAO.get_by_id(session, form_id)
+        allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+
+        form = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
-        
+
         # Create field
         field = FormFieldDAO.create(session, form_id, data)
         
@@ -280,15 +284,19 @@ def list_entries(form_id):
     session = None
     try:
         session, engine = get_db_session()
-        
-        form = FormConfigDAO.get_by_id(session, form_id)
+        allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+
+        form = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
-        
+
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 25, type=int)
-        
-        records, total = DataEntryDAO.get_all(engine, form.table_name, page, per_page)
+
+        records, total = DataEntryDAO.get_all(
+            engine, form.table_name, page, per_page,
+            location_ids=allowed_location_ids
+        )
         
         return jsonify({
             'entries': records,
@@ -324,20 +332,23 @@ def submit_entry(form_id):
     session = None
     try:
         session, engine = get_db_session()
-        
-        form = FormConfigDAO.get_by_id(session, form_id)
+        allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+
+        form = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
         if not form or not form.is_active:
             return jsonify({'error': 'Form not found or inactive'}), 404
-        
-        data = request.json
-        
-        # Validate data
+
+        data = dict(request.json) if request.json else {}
+        data.pop('location_id', None)
+
         errors = ValidationEngine.validate_form(form, data)
         if errors:
             return jsonify({'success': False, 'errors': errors}), 400
-        
-        # Insert data
-        record_id = DataEntryDAO.insert(engine, form.table_name, data, g.user.username)
+
+        record_id = DataEntryDAO.insert(
+            engine, form.table_name, data, g.user.username,
+            location_id=form.location_id
+        )
         
         return jsonify({
             'success': True,
@@ -369,23 +380,25 @@ def update_entry(form_id, record_id):
     session = None
     try:
         session, engine = get_db_session()
-        
-        form = FormConfigDAO.get_by_id(session, form_id)
+        allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+
+        form = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
-        
+
         if not form.allow_edit:
             return jsonify({'error': 'Editing not allowed for this form'}), 403
-        
+
         data = request.json
-        
-        # Validate data
+
         errors = ValidationEngine.validate_form(form, data)
         if errors:
             return jsonify({'success': False, 'errors': errors}), 400
-        
-        # Update data
-        success = DataEntryDAO.update(engine, form.table_name, record_id, data, g.user.username)
+
+        success = DataEntryDAO.update(
+            engine, form.table_name, record_id, data, g.user.username,
+            location_ids=allowed_location_ids
+        )
         
         if not success:
             return jsonify({'error': 'Record not found'}), 404
@@ -419,16 +432,19 @@ def delete_entry(form_id, record_id):
     session = None
     try:
         session, engine = get_db_session()
-        
-        form = FormConfigDAO.get_by_id(session, form_id)
+        allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+
+        form = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
-        
+
         if not form.allow_delete:
             return jsonify({'error': 'Deletion not allowed for this form'}), 403
-        
-        # Delete data
-        success = DataEntryDAO.delete(engine, form.table_name, record_id)
+
+        success = DataEntryDAO.delete(
+            engine, form.table_name, record_id,
+            location_ids=allowed_location_ids
+        )
         
         if not success:
             return jsonify({'error': 'Record not found'}), 404
@@ -468,11 +484,12 @@ def validate_data(form_id):
     session = None
     try:
         session, engine = get_db_session()
-        
-        form = FormConfigDAO.get_by_id(session, form_id)
+        allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+
+        form = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
-        
+
         data = request.json
         
         # Validate

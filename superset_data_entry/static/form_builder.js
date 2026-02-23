@@ -148,6 +148,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 title: document.getElementById('formTitle').value,
                 description: document.getElementById('formDescription').value,
                 table_name: document.getElementById('tableName').value,
+                location_id: document.getElementById('locationId') ? (document.getElementById('locationId').value.trim() || null) : null,
                 is_active: document.getElementById('isActive').checked,
                 allow_edit: document.getElementById('allowEdit').checked,
                 allow_delete: document.getElementById('allowDelete').checked,

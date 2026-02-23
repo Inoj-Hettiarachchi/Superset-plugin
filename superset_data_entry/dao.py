@@ -14,25 +14,42 @@ logger = logging.getLogger(__name__)
 
 class FormConfigDAO:
     """Data access object for form configurations"""
-    
+
     @staticmethod
-    def get_all(session: Session) -> List[FormConfiguration]:
-        """Get all form configurations"""
-        return session.query(FormConfiguration).all()
-    
+    def _location_filter(query, model, location_ids: Optional[List[str]]):
+        """Apply location filter: None = no filter; [] = no rows; else in_(location_ids) or location_id.is_(None)."""
+        if location_ids is None:
+            return query
+        if not location_ids:
+            return query.filter(model.id == -1)
+        from sqlalchemy import or_
+        return query.filter(
+            or_(
+                model.location_id.in_(location_ids),
+                model.location_id.is_(None),
+            )
+        )
+
     @staticmethod
-    def get_all_active(session: Session) -> List[FormConfiguration]:
-        """Get all active form configurations"""
-        return session.query(FormConfiguration).filter(
-            FormConfiguration.is_active == True
-        ).order_by(FormConfiguration.title).all()
-    
+    def get_all(session: Session, location_ids: Optional[List[str]] = None) -> List[FormConfiguration]:
+        """Get all form configurations, optionally filtered by location_ids (None = no filter)."""
+        q = session.query(FormConfiguration)
+        q = FormConfigDAO._location_filter(q, FormConfiguration, location_ids)
+        return q.all()
+
     @staticmethod
-    def get_by_id(session: Session, form_id: int) -> Optional[FormConfiguration]:
-        """Get form configuration by ID"""
-        return session.query(FormConfiguration).filter(
-            FormConfiguration.id == form_id
-        ).first()
+    def get_all_active(session: Session, location_ids: Optional[List[str]] = None) -> List[FormConfiguration]:
+        """Get all active form configurations, optionally filtered by location_ids (None = no filter)."""
+        q = session.query(FormConfiguration).filter(FormConfiguration.is_active == True)
+        q = FormConfigDAO._location_filter(q, FormConfiguration, location_ids)
+        return q.order_by(FormConfiguration.title).all()
+
+    @staticmethod
+    def get_by_id(session: Session, form_id: int, location_ids: Optional[List[str]] = None) -> Optional[FormConfiguration]:
+        """Get form configuration by ID, optionally restricted by location_ids (None = no filter)."""
+        q = session.query(FormConfiguration).filter(FormConfiguration.id == form_id)
+        q = FormConfigDAO._location_filter(q, FormConfiguration, location_ids)
+        return q.first()
     
     @staticmethod
     def get_by_name(session: Session, name: str) -> Optional[FormConfiguration]:
@@ -53,6 +70,7 @@ class FormConfigDAO:
             allow_edit=data.get('allow_edit', True),
             allow_delete=data.get('allow_delete', False),
             created_by=created_by,
+            location_id=data.get('location_id'),
         )
         
         session.add(form)
@@ -78,7 +96,7 @@ class FormConfigDAO:
             return None
         
         # Update form fields
-        for key in ['title', 'description', 'is_active', 'allow_edit', 'allow_delete']:
+        for key in ['title', 'description', 'is_active', 'allow_edit', 'allow_delete', 'location_id']:
             if key in data:
                 setattr(form, key, data[key])
         
@@ -158,154 +176,163 @@ class FormFieldDAO:
 
 class DataEntryDAO:
     """Data access object for dynamic data table operations"""
-    
+
     @staticmethod
-    def get_all(engine, table_name: str, page: int = 1, per_page: int = 25) -> Tuple[List[Dict], int]:
+    def _location_where_clause(location_ids: Optional[List[str]]) -> Tuple[str, Dict]:
+        """Return (sql_fragment, params) for location filter. Empty list -> no rows (1=0)."""
+        if location_ids is None or not location_ids:
+            if location_ids is not None and len(location_ids) == 0:
+                return " AND 1 = 0", {}
+            return "", {}
+
+        # Use expanding bindparam: WHERE location_id IN :location_ids
+        placeholders = ", ".join(f":loc_{i}" for i in range(len(location_ids)))
+        params = {f"loc_{i}": loc for i, loc in enumerate(location_ids)}
+        return f" AND location_id IN ({placeholders})", params
+
+    @staticmethod
+    def get_all(engine, table_name: str, page: int = 1, per_page: int = 25,
+                location_ids: Optional[List[str]] = None) -> Tuple[List[Dict], int]:
         """
-        Get all records from a data table with pagination
-        
-        Returns:
-            Tuple of (records, total_count)
+        Get all records from a data table with pagination.
+        If location_ids is [], returns empty. If None, no location filter.
         """
         offset = (page - 1) * per_page
-        
+        loc_sql, loc_params = DataEntryDAO._location_where_clause(location_ids)
+
         with engine.connect() as conn:
-            # Get total count
-            count_query = text(f"SELECT COUNT(*) FROM {table_name}")
-            total = conn.execute(count_query).scalar()
-            
-            # Get paginated records
+            count_query = text(f"SELECT COUNT(*) FROM {table_name} WHERE 1=1{loc_sql}")
+            total = conn.execute(count_query, loc_params).scalar()
+
             query = text(f"""
                 SELECT * FROM {table_name}
+                WHERE 1=1{loc_sql}
                 ORDER BY created_at DESC
                 LIMIT :limit OFFSET :offset
             """)
-            
-            result = conn.execute(query, {'limit': per_page, 'offset': offset})
+            params = {**loc_params, 'limit': per_page, 'offset': offset}
+            result = conn.execute(query, params)
             records = [dict(row._mapping) for row in result]
-            
             return records, total
 
     @staticmethod
-    def get_all_for_export(engine, table_name: str, max_records: int = 50_000) -> List[Dict]:
+    def get_all_for_export(engine, table_name: str, max_records: int = 50_000,
+                           location_ids: Optional[List[str]] = None) -> List[Dict]:
         """
         Get all records from a data table for export/seed (no pagination).
-        Limited to max_records to avoid excessive memory use.
+        If location_ids is [], returns empty. If None, no location filter.
         """
+        loc_sql, loc_params = DataEntryDAO._location_where_clause(location_ids)
         with engine.connect() as conn:
             query = text(f"""
                 SELECT * FROM {table_name}
+                WHERE 1=1{loc_sql}
                 ORDER BY id ASC
                 LIMIT :limit
             """)
-            result = conn.execute(query, {'limit': max_records})
+            result = conn.execute(query, {**loc_params, 'limit': max_records})
             return [dict(row._mapping) for row in result]
-    
+
     @staticmethod
-    def get_by_id(engine, table_name: str, record_id: int) -> Optional[Dict]:
-        """Get a single record by ID"""
+    def get_by_id(engine, table_name: str, record_id: int,
+                  location_ids: Optional[List[str]] = None) -> Optional[Dict]:
+        """Get a single record by ID; if location_ids provided, row's location_id must be in set."""
+        loc_sql, loc_params = DataEntryDAO._location_where_clause(location_ids)
         with engine.connect() as conn:
-            query = text(f"SELECT * FROM {table_name} WHERE id = :id")
-            result = conn.execute(query, {'id': record_id})
+            query = text(f"SELECT * FROM {table_name} WHERE id = :id{loc_sql}")
+            result = conn.execute(query, {'id': record_id, **loc_params})
             row = result.first()
-            
             return dict(row._mapping) if row else None
     
     @staticmethod
-    def insert(engine, table_name: str, data: Dict[str, Any], username: str) -> int:
+    def insert(engine, table_name: str, data: Dict[str, Any], username: str,
+               location_id: Optional[str] = None) -> int:
         """
-        Insert new record into data table
-        
-        Returns:
-            ID of newly created record
+        Insert new record into data table.
+        location_id is set from form (server-side), not from request body.
         """
         # Add audit fields
         data['created_by'] = username
         data['created_at'] = datetime.utcnow()
         data['updated_at'] = datetime.utcnow()
-        
+        if location_id is not None:
+            data['location_id'] = location_id
+
         # Build INSERT query
         columns = ', '.join(data.keys())
         placeholders = ', '.join(f':{key}' for key in data.keys())
-        
+
         query = text(f"""
             INSERT INTO {table_name} ({columns})
             VALUES ({placeholders})
             RETURNING id
         """)
-        
+
         with engine.begin() as conn:
             result = conn.execute(query, data)
             return result.fetchone()[0]
     
     @staticmethod
-    def update(engine, table_name: str, record_id: int, data: Dict[str, Any], username: str) -> bool:
-        """Update existing record"""
-        # Add audit fields
+    def update(engine, table_name: str, record_id: int, data: Dict[str, Any], username: str,
+               location_ids: Optional[List[str]] = None) -> bool:
+        """Update existing record; if location_ids provided, row's location_id must be in set."""
         data['updated_at'] = datetime.utcnow()
-        
-        # Build UPDATE query
         set_clause = ', '.join(f"{key} = :{key}" for key in data.keys())
-        
+        loc_sql, loc_params = DataEntryDAO._location_where_clause(location_ids)
+
         query = text(f"""
             UPDATE {table_name}
             SET {set_clause}
-            WHERE id = :record_id
+            WHERE id = :record_id{loc_sql}
         """)
-        
         data['record_id'] = record_id
-        
+        params = {**data, **loc_params}
+
         with engine.begin() as conn:
-            result = conn.execute(query, data)
+            result = conn.execute(query, params)
+            return result.rowcount > 0
+
+    @staticmethod
+    def delete(engine, table_name: str, record_id: int,
+               location_ids: Optional[List[str]] = None) -> bool:
+        """Delete record; if location_ids provided, row's location_id must be in set."""
+        loc_sql, loc_params = DataEntryDAO._location_where_clause(location_ids)
+        query = text(f"DELETE FROM {table_name} WHERE id = :id{loc_sql}")
+        with engine.begin() as conn:
+            result = conn.execute(query, {'id': record_id, **loc_params})
             return result.rowcount > 0
     
     @staticmethod
-    def delete(engine, table_name: str, record_id: int) -> bool:
-        """Delete record"""
-        query = text(f"DELETE FROM {table_name} WHERE id = :id")
-        
-        with engine.begin() as conn:
-            result = conn.execute(query, {'id': record_id})
-            return result.rowcount > 0
-    
-    @staticmethod
-    def search(engine, table_name: str, filters: Dict[str, Any], page: int = 1, per_page: int = 25) -> Tuple[List[Dict], int]:
+    def search(engine, table_name: str, filters: Dict[str, Any], page: int = 1, per_page: int = 25,
+               location_ids: Optional[List[str]] = None) -> Tuple[List[Dict], int]:
         """
-        Search records with filters
-        
-        Args:
-            filters: Dictionary of column_name: value pairs
-        
-        Returns:
-            Tuple of (records, total_count)
+        Search records with filters.
+        If location_ids is [], returns empty. If None, no location filter.
         """
         offset = (page - 1) * per_page
-        
-        # Build WHERE clause
         where_conditions = []
         params = {'limit': per_page, 'offset': offset}
-        
+
         for idx, (column, value) in enumerate(filters.items()):
             param_name = f'filter_{idx}'
             where_conditions.append(f"{column} = :{param_name}")
             params[param_name] = value
-        
+
+        loc_sql, loc_params = DataEntryDAO._location_where_clause(location_ids)
+        params.update(loc_params)
         where_clause = ' AND '.join(where_conditions) if where_conditions else '1=1'
-        
+        where_clause = where_clause + loc_sql
+
         with engine.connect() as conn:
-            # Get total count
             count_query = text(f"SELECT COUNT(*) FROM {table_name} WHERE {where_clause}")
             total = conn.execute(count_query, params).scalar()
-            
-            # Get records
+
             query = text(f"""
                 SELECT * FROM {table_name}
                 WHERE {where_clause}
                 ORDER BY created_at DESC
                 LIMIT :limit OFFSET :offset
             """)
-            
             result = conn.execute(query, params)
             records = [dict(row._mapping) for row in result]
-            
             return records, total

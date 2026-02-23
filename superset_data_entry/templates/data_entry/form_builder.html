@@ -50,6 +50,14 @@
                             <small class="form-text text-muted">PostgreSQL table where data will be stored</small>
                         </div>
                         
+                        <div class="form-group">
+                            <label for="locationId">Location ID (optional, for RLS)</label>
+                            <input type="text" class="form-control" id="locationId" 
+                                   value="{{ form_config.location_id if form_config and form_config.location_id else '' }}" 
+                                   placeholder="LOC_A">
+                            <small class="form-text text-muted">Restrict form and data to this location; leave empty for global</small>
+                        </div>
+                        
                         <div class="row data-entry-permissions-row">
                             <div class="col-md-4">
                                 <div class="form-check">

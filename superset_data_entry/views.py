@@ -13,6 +13,7 @@ import os
 from .dao import FormConfigDAO, FormFieldDAO, DataEntryDAO
 from .validation import ValidationEngine
 from .table_manager import TableManager
+from . import rls as rls_module
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +48,14 @@ class FormListView(BaseView):
     @expose('/list/')
     @has_access
     def list(self):
-        """Show list of all active forms"""
+        """Show list of all active forms (filtered by RLS location_ids when not admin)."""
         session = None
         try:
+            from flask import g
             session, engine = get_db_session()
-            forms = FormConfigDAO.get_all_active(session)
-            
+            allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+            forms = FormConfigDAO.get_all_active(session, location_ids=allowed_location_ids)
+
             return self.render_template(
                 'data_entry/form_list.html',
                 forms=forms,
@@ -80,24 +83,25 @@ class FormBuilderView(BaseView):
     @expose('/<int:form_id>')
     @has_access
     def build(self, form_id=None):
-        """Form builder interface"""
-        # Check admin permission
+        """Form builder interface (admin only; when loading form by id, validate location access)."""
         if not is_admin():
             flash("Admin access required", "danger")
             return redirect('/data-entry/forms/list/')
-        
+
         session = None
         try:
+            from flask import g
             form_config = None
-            
+
             if form_id:
                 session, engine = get_db_session()
-                form_config = FormConfigDAO.get_by_id(session, form_id)
-                
+                allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+                form_config = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
+
                 if not form_config:
                     flash("Form not found", "warning")
                     return redirect('/data-entry/forms/list/')
-            
+
             return self.render_template(
                 'data_entry/form_builder.html',
                 form_config=form_config
@@ -113,30 +117,39 @@ class FormBuilderView(BaseView):
     @expose('/save', methods=['POST'])
     @has_access
     def save(self):
-        """Save form configuration with fields"""
+        """Save form configuration with fields (admin only; location_id validated against allowed)."""
         if not is_admin():
             return jsonify({'error': 'Admin access required'}), 403
-        
+
         session = None
         try:
             from flask import g
             data = request.json
             session, engine = get_db_session()
-            
-            # Extract fields from request
+            allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+
+            # Validate location_id for create/update: only allow if in allowed_location_ids (or None for admin)
+            if 'location_id' in data and data['location_id']:
+                loc = data['location_id']
+                if allowed_location_ids is not None and loc not in allowed_location_ids:
+                    return jsonify({'error': 'location_id not allowed for your role'}), 403
+            elif not data.get('id') and allowed_location_ids is not None and len(allowed_location_ids) > 0:
+                # Create: if non-admin with locations, can set to one of them or leave None
+                pass
+
             fields_data = data.pop('fields', [])
-            
+
             if 'id' in data and data['id']:
-                # Update existing form
+                form = FormConfigDAO.get_by_id(session, int(data['id']), location_ids=allowed_location_ids)
+                if not form:
+                    return jsonify({'error': 'Form not found'}), 404
                 form = FormConfigDAO.update(session, data['id'], data)
                 message = "Form updated successfully"
-                
-                # Delete existing fields and recreate (simple approach)
+
                 for field in form.fields:
                     session.delete(field)
                 session.commit()
             else:
-                # Create new form
                 form = FormConfigDAO.create(session, data, created_by=g.user.username)
                 message = "Form created successfully"
             
@@ -192,16 +205,18 @@ class DataEntryView(BaseView):
     @expose('/<int:form_id>')
     @has_access
     def entry(self, form_id):
-        """Data entry form"""
+        """Data entry form (form must be in user's allowed locations)."""
         session = None
         try:
+            from flask import g
             session, engine = get_db_session()
-            form_config = FormConfigDAO.get_by_id(session, form_id)
-            
+            allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+            form_config = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
+
             if not form_config or not form_config.is_active:
                 flash("Form not found or inactive", "danger")
                 return redirect('/data-entry/forms/list/')
-            
+
             return self.render_template(
                 'data_entry/data_entry.html',
                 form_config=form_config
@@ -217,25 +232,27 @@ class DataEntryView(BaseView):
     @expose('/<int:form_id>/submit', methods=['POST'])
     @has_access
     def submit(self, form_id):
-        """Submit form data"""
+        """Submit form data (form's location_id used; client cannot override)."""
         session = None
         try:
             from flask import g
             session, engine = get_db_session()
-            
-            form_config = FormConfigDAO.get_by_id(session, form_id)
+            allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+            form_config = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
             if not form_config or not form_config.is_active:
                 return jsonify({'error': 'Form not found or inactive'}), 404
-            
-            data = request.json
-            
-            # Validate
+
+            data = dict(request.json) if request.json else {}
+            data.pop('location_id', None)
+
             errors = ValidationEngine.validate_form(form_config, data)
             if errors:
                 return jsonify({'success': False, 'errors': errors}), 400
-            
-            # Save
-            record_id = DataEntryDAO.insert(engine, form_config.table_name, data, g.user.username)
+
+            record_id = DataEntryDAO.insert(
+                engine, form_config.table_name, data, g.user.username,
+                location_id=form_config.location_id
+            )
             
             return jsonify({
                 'success': True,
@@ -262,31 +279,31 @@ class DataGridView(BaseView):
     @expose('/<int:form_id>')
     @has_access
     def grid(self, form_id):
-        """Data grid view"""
+        """Data grid view (filtered by RLS location_ids)."""
         session = None
         try:
+            from flask import g
             session, engine = get_db_session()
-            form_config = FormConfigDAO.get_by_id(session, form_id)
-            
+            allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+            form_config = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
+
             if not form_config:
                 flash("Form not found", "danger")
                 return redirect('/data-entry/forms/list/')
-            
-            # Get pagination parameters
+
             page = request.args.get('page', 1, type=int)
             per_page = request.args.get('per_page', 25, type=int)
-            
-            # Get data
+
             records, total = DataEntryDAO.get_all(
                 engine,
                 form_config.table_name,
                 page=page,
-                per_page=per_page
+                per_page=per_page,
+                location_ids=allowed_location_ids
             )
-            
-            # Calculate pagination
+
             total_pages = (total + per_page - 1) // per_page
-            
+
             return self.render_template(
                 'data_entry/data_grid.html',
                 form_config=form_config,
@@ -309,15 +326,19 @@ class DataGridView(BaseView):
     @expose('/<int:form_id>/seed')
     @has_access
     def seed_download(self, form_id):
-        """Download form data as a JSON seed file."""
+        """Download form data as a JSON seed file (filtered by RLS location_ids)."""
         session = None
         try:
+            from flask import g
             session, engine = get_db_session()
-            form_config = FormConfigDAO.get_by_id(session, form_id)
+            allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+            form_config = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
             if not form_config:
                 flash("Form not found", "danger")
                 return redirect('/data-entry/forms/list/')
-            records = DataEntryDAO.get_all_for_export(engine, form_config.table_name)
+            records = DataEntryDAO.get_all_for_export(
+                engine, form_config.table_name, location_ids=allowed_location_ids
+            )
 
             def _serialize(obj):
                 if isinstance(obj, datetime):
@@ -352,20 +373,24 @@ class DataGridView(BaseView):
     @expose('/<int:form_id>/delete/<int:record_id>', methods=['POST'])
     @has_access
     def delete(self, form_id, record_id):
-        """Delete a record"""
+        """Delete a record (only if row's location_id is in allowed)."""
         session = None
         try:
             session, engine = get_db_session()
-            form_config = FormConfigDAO.get_by_id(session, form_id)
-            
+            from flask import g
+            allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
+            form_config = FormConfigDAO.get_by_id(session, form_id, location_ids=allowed_location_ids)
+
             if not form_config:
                 return jsonify({'error': 'Form not found'}), 404
-            
+
             if not form_config.allow_delete:
                 return jsonify({'error': 'Deletion not allowed for this form'}), 403
-            
-            # Delete record
-            success = DataEntryDAO.delete(engine, form_config.table_name, record_id)
+
+            success = DataEntryDAO.delete(
+                engine, form_config.table_name, record_id,
+                location_ids=allowed_location_ids
+            )
             
             if not success:
                 return jsonify({'error': 'Record not found'}), 404

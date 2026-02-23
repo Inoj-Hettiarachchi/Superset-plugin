@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 MIGRATION_FILES = [
     "V6__create_form_configurations_table.sql",
     "V7__create_form_fields_table.sql",
+    "V8__add_location_id_to_form_configurations.sql",
 ]
 
 

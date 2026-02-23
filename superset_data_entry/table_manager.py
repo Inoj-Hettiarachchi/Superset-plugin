@@ -64,6 +64,7 @@ class TableManager:
         columns.append("created_by VARCHAR(255)")
         columns.append("created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
         columns.append("updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        columns.append("location_id VARCHAR(100)")
         
         create_sql = f"""
             CREATE TABLE {table_name} (
@@ -290,7 +291,7 @@ class TableManager:
             issues.append(f"Missing columns: {', '.join(missing_columns)}")
         
         # Check for required audit columns
-        required_audit_columns = ['id', 'created_by', 'created_at', 'updated_at']
+        required_audit_columns = ['id', 'created_by', 'created_at', 'updated_at', 'location_id']
         missing_audit = [
             col for col in required_audit_columns
             if col not in existing_columns
