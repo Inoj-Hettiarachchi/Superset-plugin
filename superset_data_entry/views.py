@@ -69,21 +69,11 @@ class FormListView(BaseView):
             if session:
                 session.close()
 
-
-class FormBuilderView(BaseView):
-    """
-    View for building and editing forms
-    Admin only
-    """
-    base_template = "data_entry/minimal_base.html"
-    route_base = "/data-entry/builder"
-    default_view = "build"
-    
-    @expose('/')
-    @expose('/<int:form_id>')
+    @expose('/builder/')
+    @expose('/builder/<int:form_id>')
     @has_access
     def build(self, form_id=None):
-        """Form builder: any user can create or edit forms (editing restricted by RLS location access)."""
+        """Form builder: create or edit form (editing restricted by RLS). Same permission as list."""
         session = None
         try:
             from flask import g
@@ -109,11 +99,11 @@ class FormBuilderView(BaseView):
         finally:
             if session:
                 session.close()
-    
-    @expose('/save', methods=['POST'])
+
+    @expose('/builder/save', methods=['POST'])
     @has_access
     def save(self):
-        """Save form configuration with fields (any user; location_id validated against allowed)."""
+        """Save form configuration with fields (any user; location_id validated). Same permission as list."""
         session = None
         try:
             from flask import g
@@ -121,13 +111,11 @@ class FormBuilderView(BaseView):
             session, engine = get_db_session()
             allowed_location_ids = rls_module.get_allowed_location_ids(g.user, engine)
 
-            # Validate location_id for create/update: only allow if in allowed_location_ids (or None)
             if 'location_id' in data and data['location_id']:
                 loc = data['location_id']
                 if allowed_location_ids is not None and loc not in allowed_location_ids:
                     return jsonify({'error': 'location_id not allowed for your role'}), 403
             elif not data.get('id') and allowed_location_ids is not None and len(allowed_location_ids) > 0:
-                # Create: if non-admin with locations, can set to one of them or leave None
                 pass
 
             fields_data = data.pop('fields', [])
@@ -146,25 +134,19 @@ class FormBuilderView(BaseView):
                 form = FormConfigDAO.create(session, data, created_by=g.user.username)
                 message = "Form created successfully"
             
-            # Create/update fields
             if fields_data:
                 for field_data in fields_data:
                     field_data['form_id'] = form.id
                     FormFieldDAO.create(session, form.id, field_data)
                 message += f" with {len(fields_data)} field(s)"
             
-            # Auto-create or migrate table
             if data.get('auto_create_table', False) or fields_data:
                 try:
-                    # Refresh form to get fields
                     session.refresh(form)
-                    
                     if not data.get('id'):
-                        # New form - create table
                         TableManager.create_table_from_config(form, engine)
                         message += " and table created"
                     else:
-                        # Existing form - migrate schema
                         TableManager.migrate_schema(form, engine)
                         message += " and table updated"
                 except Exception as e:

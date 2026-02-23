@@ -116,12 +116,11 @@ class SupersetDataEntryPlugin:
         """
         from .views import (
             FormListView,
-            FormBuilderView,
             DataEntryView,
             DataGridView
         )
         
-        # Add main form list view
+        # Single view for list + builder so one permission covers create/edit for non-admin
         self.appbuilder.add_view(
             FormListView,
             "data_entry_forms",
@@ -129,15 +128,6 @@ class SupersetDataEntryPlugin:
             icon="fa-wpforms",
             category="Data Entry",
             category_icon="fa-database",
-        )
-        
-        # Add form builder view (admin only)
-        self.appbuilder.add_view(
-            FormBuilderView,
-            "form_builder",
-            label="Configure Forms",
-            icon="fa-cogs",
-            category="Data Entry",
         )
         
         # Register data entry and grid views (not in menu, but accessible via routes)

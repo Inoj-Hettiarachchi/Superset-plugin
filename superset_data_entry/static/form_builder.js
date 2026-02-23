@@ -156,7 +156,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 fields: fields
             };
             
-            fetch('/data-entry/builder/save', {
+            fetch('/data-entry/forms/builder/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
