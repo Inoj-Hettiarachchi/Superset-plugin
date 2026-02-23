@@ -1,5 +1,44 @@
 /* Data Entry Plugin - UI enhancements */
 
+/* --- Prevent content from being cut off or causing horizontal scroll --- */
+html.data-entry-plugin-page,
+body.data-entry-plugin-page {
+    overflow-x: hidden;
+    max-width: 100vw;
+}
+body.data-entry-plugin-page .container-fluid,
+body.data-entry-plugin-page .container {
+    max-width: 100%;
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+body.data-entry-plugin-page .container-fluid {
+    padding-top: 1.5rem;
+}
+body.data-entry-plugin-page .row {
+    margin-left: -0.5rem;
+    margin-right: -0.5rem;
+}
+body.data-entry-plugin-page .row > [class*="col-"] {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+/* Minimal navbar: no border/line that could clip */
+body.data-entry-plugin-page .navbar {
+    border: none;
+    min-height: 50px;
+}
+body.data-entry-plugin-page .navbar .container {
+    max-width: 100%;
+}
+@media (min-width: 768px) {
+    body.data-entry-plugin-page .container-fluid,
+    body.data-entry-plugin-page .container {
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+    }
+}
+
 /* --- Simplify navbar: show only Home (on plugin pages) --- */
 .navbar .navbar-header {
     display: none !important;

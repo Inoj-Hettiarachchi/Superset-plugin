@@ -21,10 +21,17 @@
         if (!navbar) return;
         navbar.innerHTML = '<div class="container"><div class="navbar-header"><a class="navbar-brand" href="/">Home</a></div></div>';
     }
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', simplifyNavbar);
-    } else {
+    function markPluginPage() {
+        document.body.classList.add('data-entry-plugin-page');
+    }
+    function init() {
+        markPluginPage();
         simplifyNavbar();
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
     }
 })();
 </script>
