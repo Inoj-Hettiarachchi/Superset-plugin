@@ -227,6 +227,46 @@ Superset-plugin/
 
 ## 9. Security & Permissions
 
+### 9.1 How users are managed
+
+**The plugin does not manage users.** User accounts, passwords, and roles are managed entirely by **Apache Superset / Flask-AppBuilder**. The plugin only uses the **currently logged-in user** from the host app:
+
+- **`g.user`** – The authenticated user object (from FAB) in the current request.
+- **`g.user.username`** – Stored as **audit** on each record (`created_by` in dynamic tables).
+- **`g.user.roles`** – Used only to detect **Admin** for form configuration (see below).
+
+So: create/edit/delete users and assign roles in **Superset’s Security → Users / Roles**. The plugin has no user table and no user CRUD.
+
+### 9.2 Who can enter data?
+
+**Any logged-in user who has permission to access the Data Entry views can enter data.** Access is controlled by **Flask-AppBuilder permissions**, not by the plugin:
+
+- Every view and API route is protected with **`@has_access`**. FAB ties that to **roles** and **permissions** (e.g. permission to open “Data Entry Forms” or “FormBuilderView”, etc.).
+- **Who sees the Data Entry menu** is configured in Superset under **Security → Roles**: each role has a set of permissions; if a role has permission for the Data Entry menu/views, users with that role can open the forms list, enter data, view data, and (if Admin) configure forms.
+- The plugin does **not** restrict “only role X can submit data”. If a user can reach the data entry form (because their role has the right permissions), they can submit. To restrict data entry to certain roles, you limit which roles have the **Data Entry** (and related) permissions in Superset.
+
+So in practice: **any user type that can access the plugin’s pages can enter data**; “can access” is decided by Superset’s role/permission setup.
+
+### 9.3 User mapping (how the current user is used)
+
+| Use | How it works |
+|-----|----------------|
+| **Authorization** | `g.user` is the current request’s user. `is_admin()` checks `any(role.name == 'Admin' for role in g.user.roles)`. Only users with the **Admin** role can create/edit/delete forms, open the form builder, or use the corresponding API endpoints. |
+| **Audit on records** | On **insert**, `DataEntryDAO.insert(..., username=g.user.username)` sets `created_by` (and `created_at` / `updated_at`) on the row. On **update**, the same `username` can be passed for an “updated by” concept if you add it. So “user mapping” for data is: **Superset username → `created_by` (and optionally updated_by) in the dynamic table**. |
+| **Form config audit** | When a form is **created**, `FormConfigDAO.create(..., created_by=g.user.username)` sets `created_by` on `form_configurations`. |
+
+There is **no separate user table or ID** in the plugin: the **username string** from Superset’s user is the only “user identifier” stored.
+
+### 9.4 Summary flow
+
+1. User logs into **Superset** (FAB handles login and session).
+2. User opens **Data Entry → Data Entry Forms** (allowed only if their role has the right FAB permissions).
+3. **List forms** – `FormListView` / API: `@has_access` allows access; all active forms are shown.
+4. **Enter data** – `DataEntryView` / API: `@has_access` allows access; on submit, `g.user.username` is written to `created_by` (and timestamps) on the dynamic table.
+5. **Configure forms** – `FormBuilderView` / API: in addition to `@has_access`, the code checks **`is_admin()`**; only users with the **Admin** role can create/edit/delete forms or use the builder.
+
+So: **users are managed in Superset; any user type that can access the plugin can enter data (governed by FAB permissions); user mapping is “current Superset user’s username stored in `created_by` (and similar) on records”.**
+
 - **Authentication:** Delegated to Superset (FAB); plugin uses `g.user` and `@has_access`.
 - **Admin-only:** Form create/update/delete and form builder UI check `is_admin()` (role name `"Admin"`).
 - **Database:** Single Superset DB; same credentials for metadata and dynamic tables. No separate DB config.

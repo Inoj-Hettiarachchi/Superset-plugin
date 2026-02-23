@@ -1,5 +1,76 @@
 /* Data Entry Plugin - UI enhancements */
 
+/* --- Layout: use wrapper so CSS applies without depending on JS-added body class --- */
+/* body:has() applies when our template's wrapper is present (no JS required) */
+body:has(.data-entry-plugin-root),
+body.data-entry-plugin-page {
+    overflow-x: hidden;
+    max-width: 100vw;
+    padding-top: 56px;
+}
+.data-entry-plugin-root .container-fluid,
+.data-entry-plugin-root .container,
+body.data-entry-plugin-page .container-fluid,
+body.data-entry-plugin-page .container {
+    max-width: 100%;
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+.data-entry-plugin-root .container-fluid,
+body.data-entry-plugin-page .container-fluid {
+    padding-top: 1.25rem;
+}
+.data-entry-plugin-root .row,
+body.data-entry-plugin-page .row {
+    margin-left: -0.5rem;
+    margin-right: -0.5rem;
+}
+.data-entry-plugin-root .row > [class*="col-"],
+body.data-entry-plugin-page .row > [class*="col-"] {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+body:has(.data-entry-plugin-root) .navbar,
+body.data-entry-plugin-page .navbar {
+    border: none;
+    min-height: 50px;
+    height: 50px;
+}
+body:has(.data-entry-plugin-root) .navbar .container,
+body.data-entry-plugin-page .navbar .container {
+    max-width: 100%;
+}
+@media (min-width: 768px) {
+    .data-entry-plugin-root .container-fluid,
+    .data-entry-plugin-root .container,
+    body.data-entry-plugin-page .container-fluid,
+    body.data-entry-plugin-page .container {
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+    }
+}
+
+/* --- Simplify navbar: show only Home (on plugin pages) --- */
+.navbar .navbar-header {
+    display: none !important;
+}
+/* Hide right-side menu first (user / admin dropdown) so it doesn't get the Home rule */
+.navbar .navbar-nav.navbar-right,
+.navbar .navbar-nav.ms-auto,
+.navbar .navbar-collapse .dropdown.pull-right {
+    display: none !important;
+}
+/* Hide all top-level menu items in the main (left) nav */
+.navbar .navbar-nav > li {
+    display: none !important;
+}
+/* Show only the menu item that is the Home link */
+.navbar .navbar-nav > li:has(a[href="/"]),
+.navbar .navbar-nav > li:has(a[href="/superset/"]),
+.navbar .navbar-nav > li:has(a[href="/dashboard/list/"]) {
+    display: list-item !important;
+}
+
 /* Form list cards */
 .data-entry-form-card {
     border: 1px solid rgba(0, 0, 0, 0.08);
