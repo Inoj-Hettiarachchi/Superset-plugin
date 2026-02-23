@@ -1,0 +1,31 @@
+{% extends "appbuilder/baselayout.html" %}
+
+{# Override navbar so only Home is shown #}
+{% block navbar %}
+<nav class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+    <div class="container">
+        <div class="navbar-header">
+            <a class="navbar-brand" href="/">Home</a>
+        </div>
+    </div>
+</nav>
+{% endblock %}
+
+{# Fallback: if navbar block is not used by Superset's base, replace navbar via JS #}
+{% block tail_js %}
+{{ super() }}
+<script{% if csp_nonce is defined %} nonce="{{ csp_nonce() }}"{% endif %}>
+(function() {
+    function simplifyNavbar() {
+        var navbar = document.querySelector('.navbar');
+        if (!navbar) return;
+        navbar.innerHTML = '<div class="container"><div class="navbar-header"><a class="navbar-brand" href="/">Home</a></div></div>';
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', simplifyNavbar);
+    } else {
+        simplifyNavbar();
+    }
+})();
+</script>
+{% endblock %}

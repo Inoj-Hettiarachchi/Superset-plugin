@@ -40,7 +40,7 @@ class FormListView(BaseView):
     View to list all data entry forms
     Main landing page for the plugin
     """
-    
+    base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/forms"
     default_view = "list"
     
@@ -72,7 +72,7 @@ class FormBuilderView(BaseView):
     View for building and editing forms
     Admin only
     """
-    
+    base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/builder"
     default_view = "build"
     
@@ -185,7 +185,7 @@ class DataEntryView(BaseView):
     """
     View for entering data via forms
     """
-    
+    base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/entry"
     default_view = "entry"
     
@@ -255,7 +255,7 @@ class DataGridView(BaseView):
     """
     View for viewing submitted data in table format
     """
-    
+    base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/data"
     default_view = "grid"
     
