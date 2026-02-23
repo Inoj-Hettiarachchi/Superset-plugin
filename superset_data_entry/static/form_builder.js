@@ -77,19 +77,51 @@ document.addEventListener('DOMContentLoaded', function() {
         if (wrap) wrap.style.display = e.target.value === 'select' ? 'block' : 'none';
     });
 
-    // Add option row (for Select fields)
+    function findAddOptionButton(el) {
+        while (el && el !== document.body) {
+            if (el.classList && el.classList.contains('add-option-btn')) return el;
+            el = el.parentElement;
+        }
+        return null;
+    }
+
+    function findOptionList(btn) {
+        var wrap = btn;
+        while (wrap && wrap !== document.body) {
+            if (wrap.classList && wrap.classList.contains('field-options-wrap')) break;
+            wrap = wrap.parentElement;
+        }
+        return wrap ? wrap.querySelector('.field-options-list') : null;
+    }
+
+    function findOptionRow(el) {
+        while (el && el !== document.body) {
+            if (el.classList && el.classList.contains('option-row')) return el;
+            el = el.parentElement;
+        }
+        return null;
+    }
+
+    // Add option row (for Select fields) - use delegation and parent walk for compatibility
     document.addEventListener('click', function(e) {
-        var addBtn = e.target && e.target.closest && e.target.closest('.add-option-btn');
+        var addBtn = findAddOptionButton(e.target);
         if (addBtn) {
-            var wrap = addBtn.closest('.field-options-wrap');
-            var list = wrap ? wrap.querySelector('.field-options-list') : null;
+            e.preventDefault();
+            e.stopPropagation();
+            var list = findOptionList(addBtn);
             if (list) list.insertAdjacentHTML('beforeend', getOptionRowHtml());
             return;
         }
-        var removeBtn = e.target && e.target.closest && e.target.closest('.remove-option');
-        if (removeBtn) {
-            var row = removeBtn.closest('.option-row');
-            if (row) row.remove();
+        var el = e.target;
+        while (el && el !== document.body) {
+            if (el.classList && el.classList.contains('remove-option')) {
+                var row = findOptionRow(el);
+                if (row) row.remove();
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            el = el.parentElement;
         }
     });
 
