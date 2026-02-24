@@ -1,8 +1,9 @@
 {% extends "appbuilder/baselayout.html" %}
 
-{# Critical layout CSS so it applies even if external stylesheet loads late or fails #}
+{# Plugin version: view source and search "data-entry-plugin" to verify build #}
 {% block head_css %}
 {{ super() }}
+<!-- data-entry-plugin version: {{ data_entry_plugin_version|default('1.0.0') }} -->
 <style type="text/css">
   body:has(.data-entry-plugin-root) { overflow-x: hidden; max-width: 100vw; padding-top: 56px; }
   .data-entry-plugin-root .container-fluid,

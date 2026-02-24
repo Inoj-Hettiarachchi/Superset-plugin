@@ -70,16 +70,16 @@ This document describes the architecture of the complete implementation.
 
 | Table | Purpose |
 |-------|--------|
-| `form_configurations` | Form metadata: name, title, description, `table_name`, is_active, allow_edit, allow_delete, audit fields. |
+| `form_configurations` | Form metadata: name, title, description, `table_name`, is_active, allow_edit, allow_delete, **location_id** (optional, for RLS), audit fields. |
 | `form_fields` | Per-form field definitions: field_name, field_label, field_type, field_order, is_required, validation_rules (JSONB), options (JSONB), etc. |
 
-Created by migrations: `migrations/V6__create_form_configurations_table.sql`, `migrations/V7__create_form_fields_table.sql`.
+Created by migrations: `migrations/V6__create_form_configurations_table.sql`, `migrations/V7__create_form_fields_table.sql`, `migrations/V8__add_location_id_to_form_configurations.sql`.
 
 ### 3.3 Dynamic tables
 
 - One **dynamic table** per form (name = `form_configurations.table_name`).
 - Created/updated by **TableManager** from form configuration (field types → PostgreSQL column types).
-- Each table has: `id` (SERIAL), form-defined columns, plus `created_by`, `created_at`, `updated_at`.
+- Each table has: `id` (SERIAL), form-defined columns, plus `created_by`, `created_at`, `updated_at`, **location_id** (for multi-tenant filtering).
 
 ### 3.4 Models (`models.py`)
 
@@ -204,6 +204,7 @@ Superset-plugin/
 │   ├── validation.py       # ValidationEngine (type, rules, custom)
 │   ├── api.py              # REST blueprint /api/v1/data-entry
 │   ├── views.py             # FAB views (list, builder, entry, grid)
+│   ├── rls.py               # get_allowed_location_ids (multi-tenant RLS)
 │   ├── templates/data_entry/
 │   │   ├── form_list.html
 │   │   ├── form_builder.html
@@ -217,7 +218,8 @@ Superset-plugin/
 │       └── data_entry_plugin.css
 ├── migrations/
 │   ├── V6__create_form_configurations_table.sql
-│   └── V7__create_form_fields_table.sql
+│   ├── V7__create_form_fields_table.sql
+│   └── V8__add_location_id_to_form_configurations.sql
 ├── setup.py / pyproject.toml
 ├── README.md
 └── ARCHITECTURE.md (this file)
@@ -273,7 +275,50 @@ So: **users are managed in Superset; any user type that can access the plugin ca
 
 ---
 
-## 10. Dependencies
+## 10. Multi-tenant / Row-Level Security (RLS)
+
+### 10.1 Purpose
+
+To support **multi-tenancy**, forms and data rows can be scoped by **location** (e.g. site, region, tenant). Users only see and enter data for **locations they are allowed to access**.
+
+### 10.2 Where location is stored
+
+- **Form configuration:** `FormConfiguration.location_id` (nullable). A form with `location_id = NULL` is **global** (visible to all users who can access the plugin). A form with `location_id = 'LOC_A'` is only visible to users who have that location in their allowed set.
+- **Data rows:** Each dynamic table has a **`location_id`** column. When a user submits an entry, the row's `location_id` is set from the **form's** `location_id` (server-side). The client cannot override it.
+
+### 10.3 How allowed locations are resolved
+
+The plugin uses **Superset's Row Level Security** to determine a user's allowed locations:
+
+- **`rls.get_allowed_location_ids(user, engine)`** (in `rls.py`):
+  - If the user has the **Admin** role, returns **`None`** (no filter; can see all forms and data).
+  - Otherwise, it queries Superset's tables: `ab_user_role` to `rls_filter_roles` to `row_level_security_filters`, and parses the filter **clause** for patterns like `location_id = 'LOC_A'` or `location_id IN ('A','B')`. It returns a sorted list of allowed location IDs.
+  - If the user has no RLS filters (or the query fails), returns **`[]`** (no locations; user sees no location-scoped forms or data).
+
+Assign locations to users by configuring Superset RLS filters (e.g. create an RLS filter with clause `location_id = 'LOC_A'`, attach it to a role, assign that role to the user). Admins bypass RLS and see everything.
+
+### 10.4 How filtering is applied
+
+- **Form list / form config:** `FormConfigDAO.get_all_active`, `get_by_id` accept optional **`location_ids`**. When provided, only forms with `location_id IN (allowed)` or `location_id IS NULL` are returned. When `location_ids == []`, no forms are returned.
+- **Data entry submit:** The request body must not set `location_id`; the server sets the row's `location_id` from **`form_config.location_id`**.
+- **Data grid / export / update / delete:** `DataEntryDAO.get_all`, `get_all_for_export`, `get_by_id`, `update`, `delete` accept optional **`location_ids`**. When provided, only rows whose `location_id` is in that set are read or modified. When `location_ids == []`, no rows are returned/updated/deleted.
+
+Views and API resolve **`allowed_location_ids = rls.get_allowed_location_ids(g.user, engine)`** once per request and pass it into the DAOs. Form create/update validate that any `location_id` set on the form is in the user's allowed set (or empty for global).
+
+### 10.5 Form builder UI
+
+In the Form Builder, an optional **"Location ID (optional, for RLS)"** field is available. If set, the form and its data are scoped to that location. Leave it empty for a **global** form. The value is validated on save against the current user's allowed locations (unless the user is Admin).
+
+### 10.6 Assigning locations to users
+
+1. In Superset, go to **Security → Row Level Security** and create a filter (e.g. name: "Location A", clause: `location_id = 'LOC_A'`).
+2. Attach that filter to the appropriate **role(s)** via **Security → List Roles** (e.g. "RLS Filter Roles").
+3. Assign users to those roles. Those users will then only see forms and data for the locations defined in their role's RLS filters.
+4. **Admin** users see all forms and data regardless of RLS.
+
+---
+
+## 11. Dependencies
 
 - **Flask** (Superset’s)
 - **Flask-AppBuilder** (views, security, BaseView)

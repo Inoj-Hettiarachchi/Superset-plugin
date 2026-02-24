@@ -1,6 +1,6 @@
 """
-Resolve allowed location_ids for the current user from Superset's row_level_security_filters.
-Used for RLS: users only see and enter data for their assigned location(s).
+Resolve allowed location_ids for the current user for multi-tenant / RLS.
+Users only see and enter data for their assigned location(s).
 """
 import re
 import logging
@@ -13,22 +13,21 @@ logger = logging.getLogger(__name__)
 
 def get_allowed_location_ids(user, engine) -> Optional[List[str]]:
     """
-    Get the list of location_ids the user is allowed to access based on Superset RLS filters.
+    Get the list of location_ids the user is allowed to access.
 
-    - If user has Admin role (or bypass), return None (no filter / all locations).
-    - Else query Superset DB: ab_user_role -> ab_role -> rls_filter_roles -> row_level_security_filters,
+    - If user has Admin role, return None (no filter / all locations).
+    - Else query Superset DB: ab_user_role -> rls_filter_roles -> row_level_security_filters,
       parse clause for location_id = 'x' or location_id IN ('a','b'), return unique sorted list.
     - If user has no RLS filters, return [].
 
     Returns:
-        None: no filter (admin or bypass - can see all)
+        None: no filter (admin - can see all)
         []: no locations allowed
         ['loc1', 'loc2', ...]: only these locations
     """
     if not user or not getattr(user, 'roles', None):
         return []
 
-    # Admin (or chosen bypass role) sees all
     if any(getattr(r, 'name', None) == 'Admin' for r in user.roles):
         return None
 
@@ -37,8 +36,6 @@ def get_allowed_location_ids(user, engine) -> Optional[List[str]]:
         return []
 
     try:
-        # Superset/FAB tables: ab_user_role links user to role; rls_filter_roles links role to filter
-        # row_level_security_filters has the clause (e.g. "location_id = 'LOC_A'" or "location_id IN ('A','B')")
         query = text("""
             SELECT DISTINCT rlsf.clause
             FROM ab_user_role aur
@@ -56,20 +53,15 @@ def get_allowed_location_ids(user, engine) -> Optional[List[str]]:
         return []
 
     location_ids = set()
-
-    # Single: location_id = 'LOC_A'
     single_re = re.compile(r"location_id\s*=\s*['\"]([^'\"]+)['\"]", re.IGNORECASE)
-    # IN list: capture all quoted strings inside IN (...)
-    in_quoted_re = re.compile(r"location_id\s+IN\s*\(([^)]+)\)", re.IGNORECASE)
+    in_re = re.compile(r"location_id\s+IN\s*\(([^)]+)\)", re.IGNORECASE)
 
     for (clause,) in rows:
         if not clause or not isinstance(clause, str):
             continue
-        # Single value
         for m in single_re.finditer(clause):
             location_ids.add(m.group(1).strip())
-        # IN (...)
-        in_m = in_quoted_re.search(clause)
+        in_m = in_re.search(clause)
         if in_m:
             inner = in_m.group(1)
             for part in re.findall(r"['\"]([^'\"]+)['\"]", inner):

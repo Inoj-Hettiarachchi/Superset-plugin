@@ -30,7 +30,12 @@ class SupersetDataEntryPlugin:
         """
         self.appbuilder = appbuilder
         self.app = appbuilder.app
-        
+        try:
+            from . import __version__
+            self._plugin_version = __version__
+        except Exception:
+            self._plugin_version = "1.0.0"
+
         # Setup with error boundaries
         try:
             self._setup_template_folder()
@@ -146,7 +151,10 @@ class SupersetDataEntryPlugin:
             data_entry_api_bp,
             url_prefix='/api/v1/data-entry'
         )
-        
+        version = getattr(self, '_plugin_version', '1.0.0')
+        @self.app.context_processor
+        def _inject_plugin_version():
+            return {"data_entry_plugin_version": version}
         logger.info("✅ Plugin API registered at /api/v1/data-entry")
     
     def _run_migrations_if_needed(self):
