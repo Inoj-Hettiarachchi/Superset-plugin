@@ -50,8 +50,7 @@ def _strip_sql_comments(segment: str) -> str:
 
 def run_migrations(engine):
     """
-    Run V6 and V7 migrations if not already applied.
-    Safe to call multiple times (SQL uses IF NOT EXISTS).
+    Run V6, V7, and V8 migrations. Safe to call multiple times (SQL uses IF NOT EXISTS).
     """
     for filename in MIGRATION_FILES:
         try:
@@ -76,3 +75,32 @@ def run_migrations(engine):
         except Exception as e:
             logger.error(f"❌ Migration failed {filename}: {e}")
             raise
+
+
+def main():
+    """CLI entry point: run plugin migrations using DB URI from env or --database-uri."""
+    import argparse
+    from sqlalchemy import create_engine
+
+    parser = argparse.ArgumentParser(
+        description="Run Data Entry Plugin migrations (form_configurations, form_fields, allowed_role_names)."
+    )
+    parser.add_argument(
+        "--database-uri",
+        "-d",
+        default=None,
+        help="Database URI (default: SQLALCHEMY_DATABASE_URI or SUPERSET_SQLALCHEMY_DATABASE_URI env).",
+    )
+    args = parser.parse_args()
+    uri = args.database_uri or os.environ.get("SQLALCHEMY_DATABASE_URI") or os.environ.get("SUPERSET_SQLALCHEMY_DATABASE_URI")
+    if not uri:
+        logger.error("No database URI. Set SQLALCHEMY_DATABASE_URI or SUPERSET_SQLALCHEMY_DATABASE_URI, or pass --database-uri")
+        raise SystemExit(1)
+    logger.info("Running migrations...")
+    engine = create_engine(uri, pool_pre_ping=True)
+    run_migrations(engine)
+    logger.info("Done.")
+
+
+if __name__ == "__main__":
+    main()
