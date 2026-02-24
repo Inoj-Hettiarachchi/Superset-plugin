@@ -10,10 +10,14 @@
   .data-entry-plugin-root .container-fluid { padding-top: 1.25rem; }
   body:has(.data-entry-plugin-root) .navbar { border: none; min-height: 50px; height: 50px; }
   body:has(.data-entry-plugin-root) .navbar .container { max-width: 100%; }
+  /* Dedicated Home bar - always visible, not dependent on navbar block */
+  #data-entry-home-bar { display: block !important; visibility: visible !important; position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; height: 50px !important; z-index: 9999 !important; background: #222 !important; color: #fff !important; align-items: center !important; padding: 0 1rem !important; box-sizing: border-box !important; }
+  #data-entry-home-bar a { color: #9d9d9d !important; text-decoration: none !important; font-size: 18px !important; }
+  #data-entry-home-bar a:hover { color: #fff !important; }
 </style>
 {% endblock %}
 
-{# Override navbar so only Home is shown #}
+{# Override navbar so only Home is shown (may be ignored by some FAB/Superset layouts) #}
 {% block navbar %}
 <nav class="navbar navbar-inverse navbar-fixed-top data-entry-nav-minimal" role="navigation">
     <div class="container">
@@ -24,30 +28,50 @@
 </nav>
 {% endblock %}
 
-{# Fallback: if navbar block is not used, replace navbar via JS and ensure only Home shows #}
+{# Inject our own Home bar and/or replace navbar so Home is always visible #}
 {% block tail_js %}
 {{ super() }}
 <script{% if csp_nonce is defined %} nonce="{{ csp_nonce() }}"{% endif %}>
 (function() {
+    function ensureHomeBar() {
+        var bar = document.getElementById('data-entry-home-bar');
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.id = 'data-entry-home-bar';
+            bar.setAttribute('role', 'navigation');
+            bar.innerHTML = '<a href=\"/\">Home</a>';
+            document.body.insertBefore(bar, document.body.firstChild);
+        }
+        bar.style.display = 'flex';
+        bar.style.visibility = 'visible';
+        bar.style.alignItems = 'center';
+    }
     function simplifyNavbar() {
         var navbar = document.querySelector('.navbar');
-        if (!navbar) return;
-        navbar.classList.add('data-entry-nav-minimal');
-        navbar.innerHTML = '<div class="container"><div class="navbar-header"><a class="navbar-brand" href="/">Home</a></div></div>';
+        if (navbar) {
+            navbar.classList.add('data-entry-nav-minimal');
+            navbar.innerHTML = '<div class="container"><div class="navbar-header"><a class="navbar-brand" href=\"/\">Home</a></div></div>';
+        }
+        ensureHomeBar();
     }
     function markPluginPage() { document.body.classList.add('data-entry-plugin-page'); }
     function init() {
         markPluginPage();
+        ensureHomeBar();
         simplifyNavbar();
     }
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
             init();
-            setTimeout(simplifyNavbar, 150);
+            setTimeout(ensureHomeBar, 100);
+            setTimeout(simplifyNavbar, 200);
+            setTimeout(ensureHomeBar, 500);
         });
     } else {
         init();
-        setTimeout(simplifyNavbar, 150);
+        setTimeout(ensureHomeBar, 100);
+        setTimeout(simplifyNavbar, 200);
+        setTimeout(ensureHomeBar, 500);
     }
 })();
 </script>
