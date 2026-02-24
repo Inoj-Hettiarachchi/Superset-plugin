@@ -160,7 +160,7 @@ class SupersetDataEntryPlugin:
         logger.info("✅ Plugin API registered at /api/v1/data-entry")
     
     def _run_migrations_if_needed(self):
-        """Run bundled migrations if plugin tables are missing."""
+        """Run bundled migrations if plugin tables or columns are missing."""
         try:
             from sqlalchemy import text
         except ImportError as e:
@@ -176,9 +176,19 @@ class SupersetDataEntryPlugin:
                 AND table_name IN ('form_configurations', 'form_fields')
             """))
             count = result.scalar()
-        if count < 2:
+        run_needed = count < 2
+        if not run_needed:
+            # Check if form_configurations has allowed_role_names (V8)
+            with engine.connect() as conn:
+                r = conn.execute(text("""
+                    SELECT COUNT(*) FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'form_configurations'
+                    AND column_name = 'allowed_role_names'
+                """))
+                run_needed = r.scalar() == 0
+        if run_needed:
             from .migrations_runner import run_migrations
-            logger.info("Plugin tables missing; running migrations...")
+            logger.info("Plugin migrations needed; running...")
             run_migrations(engine)
             logger.info("✅ Migrations completed")
         else:

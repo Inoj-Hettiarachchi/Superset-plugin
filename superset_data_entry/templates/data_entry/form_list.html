@@ -39,7 +39,7 @@
                                 <a href="/data-entry/data/{{ form.id }}" class="btn btn-info btn-sm">
                                     <i class="fa fa-table"></i> View Data
                                 </a>
-                                {% if is_admin %}
+                                {% if current_username and form.created_by == current_username %}
                                 <a href="/data-entry/builder/{{ form.id }}" class="btn btn-secondary btn-sm">
                                     <i class="fa fa-cog"></i> Configure
                                 </a>

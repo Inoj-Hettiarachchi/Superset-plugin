@@ -15,6 +15,11 @@ import os
 from .dao import FormConfigDAO, FormFieldDAO, DataEntryDAO
 from .validation import ValidationEngine
 from .table_manager import TableManager
+from .form_access import (
+    user_can_enter_data_for_form,
+    user_can_configure_form,
+    get_available_role_names,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +36,22 @@ def get_db_session():
     return Session(), engine
 
 
-def is_admin():
-    """Check if current user has admin role"""
+def user_has_data_entry_access():
+    """
+    True if the current user has at least one role whose name contains 'admin' (case-insensitive).
+    Used for menu visibility, view access, and form-builder admin checks.
+    """
     from flask import g
-    return any(role.name == 'Admin' for role in g.user.roles)
+    if not g or not getattr(g, 'user', None):
+        return False
+    user = g.user
+    roles = getattr(user, 'roles', None) or []
+    return any('admin' in getattr(role, 'name', '').lower() for role in roles)
+
+
+def is_admin():
+    """Check if current user has an admin-like role (name contains 'admin', case-insensitive)."""
+    return user_has_data_entry_access()
 
 
 class FormListView(BaseView):
@@ -45,6 +62,9 @@ class FormListView(BaseView):
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/forms"
     default_view = "list"
+
+    def is_accessible(self):
+        return user_has_data_entry_access()
     
     @expose('/list/')
     @has_access
@@ -52,13 +72,15 @@ class FormListView(BaseView):
         """Show list of all active forms"""
         session = None
         try:
+            from flask import g
             session, engine = get_db_session()
-            forms = FormConfigDAO.get_all_active(session)
+            forms = FormConfigDAO.get_all_active_for_user(session, g.user)
             
             return self.render_template(
                 'data_entry/form_list.html',
                 forms=forms,
-                is_admin=is_admin()
+                is_admin=is_admin(),
+                current_username=g.user.username if g.user else None,
             )
         except Exception as e:
             logger.error(f"Error loading form list: {e}")
@@ -77,6 +99,9 @@ class FormBuilderView(BaseView):
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/builder"
     default_view = "build"
+
+    def is_accessible(self):
+        return user_has_data_entry_access()
     
     @expose('/')
     @expose('/<int:form_id>')
@@ -90,6 +115,7 @@ class FormBuilderView(BaseView):
         
         session = None
         try:
+            from flask import g
             form_config = None
             
             if form_id:
@@ -99,10 +125,17 @@ class FormBuilderView(BaseView):
                 if not form_config:
                     flash("Form not found", "warning")
                     return redirect('/data-entry/forms/list/')
+                if not user_can_configure_form(g.user, form_config):
+                    flash("Only the form owner can configure this form", "danger")
+                    return redirect('/data-entry/forms/list/')
             
+            if not session:
+                session, engine = get_db_session()
+            available_roles = get_available_role_names(engine)
             return self.render_template(
                 'data_entry/form_builder.html',
-                form_config=form_config
+                form_config=form_config,
+                available_roles=available_roles,
             )
         except Exception as e:
             logger.error(f"Error loading form builder: {e}")
@@ -129,7 +162,12 @@ class FormBuilderView(BaseView):
             fields_data = data.pop('fields', [])
             
             if 'id' in data and data['id']:
-                # Update existing form
+                # Update existing form: only owner can save
+                form = FormConfigDAO.get_by_id(session, data['id'])
+                if not form:
+                    return jsonify({'error': 'Form not found'}), 404
+                if not user_can_configure_form(g.user, form):
+                    return jsonify({'error': 'Only the form owner can update this form'}), 403
                 form = FormConfigDAO.update(session, data['id'], data)
                 message = "Form updated successfully"
                 
@@ -190,6 +228,9 @@ class DataEntryView(BaseView):
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/entry"
     default_view = "entry"
+
+    def is_accessible(self):
+        return user_has_data_entry_access()
     
     @expose('/<int:form_id>')
     @has_access
@@ -197,11 +238,15 @@ class DataEntryView(BaseView):
         """Data entry form"""
         session = None
         try:
+            from flask import g
             session, engine = get_db_session()
             form_config = FormConfigDAO.get_by_id(session, form_id)
             
             if not form_config or not form_config.is_active:
                 flash("Form not found or inactive", "danger")
+                return redirect('/data-entry/forms/list/')
+            if not user_can_enter_data_for_form(g.user, form_config):
+                flash("Access denied to this form", "danger")
                 return redirect('/data-entry/forms/list/')
             
             return self.render_template(
@@ -228,6 +273,8 @@ class DataEntryView(BaseView):
             form_config = FormConfigDAO.get_by_id(session, form_id)
             if not form_config or not form_config.is_active:
                 return jsonify({'error': 'Form not found or inactive'}), 404
+            if not user_can_enter_data_for_form(g.user, form_config):
+                return jsonify({'error': 'Access denied to this form'}), 403
             
             data = request.json
             
@@ -260,6 +307,9 @@ class DataGridView(BaseView):
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/data"
     default_view = "grid"
+
+    def is_accessible(self):
+        return user_has_data_entry_access()
     
     @expose('/<int:form_id>')
     @has_access
@@ -267,11 +317,15 @@ class DataGridView(BaseView):
         """Data grid view"""
         session = None
         try:
+            from flask import g
             session, engine = get_db_session()
             form_config = FormConfigDAO.get_by_id(session, form_id)
             
             if not form_config:
                 flash("Form not found", "danger")
+                return redirect('/data-entry/forms/list/')
+            if not user_can_enter_data_for_form(g.user, form_config):
+                flash("Access denied to this form", "danger")
                 return redirect('/data-entry/forms/list/')
             
             # Get pagination parameters
@@ -314,10 +368,14 @@ class DataGridView(BaseView):
         """Download form data as a JSON seed file."""
         session = None
         try:
+            from flask import g
             session, engine = get_db_session()
             form_config = FormConfigDAO.get_by_id(session, form_id)
             if not form_config:
                 flash("Form not found", "danger")
+                return redirect('/data-entry/forms/list/')
+            if not user_can_enter_data_for_form(g.user, form_config):
+                flash("Access denied to this form", "danger")
                 return redirect('/data-entry/forms/list/')
             records = DataEntryDAO.get_all_for_export(engine, form_config.table_name)
 
@@ -357,10 +415,14 @@ class DataGridView(BaseView):
         """Download form data as CSV."""
         session = None
         try:
+            from flask import g
             session, engine = get_db_session()
             form_config = FormConfigDAO.get_by_id(session, form_id)
             if not form_config:
                 flash("Form not found", "danger")
+                return redirect('/data-entry/forms/list/')
+            if not user_can_enter_data_for_form(g.user, form_config):
+                flash("Access denied to this form", "danger")
                 return redirect('/data-entry/forms/list/')
             records = DataEntryDAO.get_all_for_export(engine, form_config.table_name)
 
@@ -414,11 +476,14 @@ class DataGridView(BaseView):
         """Delete a record"""
         session = None
         try:
+            from flask import g
             session, engine = get_db_session()
             form_config = FormConfigDAO.get_by_id(session, form_id)
             
             if not form_config:
                 return jsonify({'error': 'Form not found'}), 404
+            if not user_can_enter_data_for_form(g.user, form_config):
+                return jsonify({'error': 'Access denied to this form'}), 403
             
             if not form_config.allow_delete:
                 return jsonify({'error': 'Deletion not allowed for this form'}), 403

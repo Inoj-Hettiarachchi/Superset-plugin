@@ -23,6 +23,7 @@ class FormConfiguration(Model):
     allow_edit = Column(Boolean, default=True)
     allow_delete = Column(Boolean, default=False)
     created_by = Column(String(255))
+    allowed_role_names = Column(JSONB, nullable=True)  # list of role names who can enter data
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -49,6 +50,7 @@ class FormConfiguration(Model):
             'allow_edit': self.allow_edit,
             'allow_delete': self.allow_delete,
             'created_by': self.created_by,
+            'allowed_role_names': self.allowed_role_names if self.allowed_role_names is not None else [],
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

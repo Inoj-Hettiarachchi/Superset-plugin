@@ -184,6 +184,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 title: document.getElementById('formTitle').value,
                 description: document.getElementById('formDescription').value,
                 table_name: document.getElementById('tableName').value,
+                allowed_role_names: (function() {
+                    var checked = [];
+                    document.querySelectorAll('.allowed-role-cb:checked').forEach(function(cb) {
+                        if (cb.value) checked.push(cb.value);
+                    });
+                    return checked;
+                })(),
                 is_active: document.getElementById('isActive').checked,
                 allow_edit: document.getElementById('allowEdit').checked,
                 allow_delete: document.getElementById('allowDelete').checked,

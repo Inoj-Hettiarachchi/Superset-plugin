@@ -51,6 +51,23 @@
                             <small class="form-text text-muted">PostgreSQL table where data will be stored</small>
                         </div>
                         
+                        <div class="form-group">
+                            <label>Roles allowed to enter data</label>
+                            <p class="small text-muted">Only the form owner and users with these roles can enter or view data. You are always allowed as the owner.</p>
+                            <div id="allowedRolesContainer" class="border rounded p-2" style="max-height: 200px; overflow-y: auto;">
+                                {% for role in available_roles or [] %}
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input allowed-role-cb" id="role-{{ role }}" value="{{ role }}"
+                                           {{ 'checked' if form_config and form_config.allowed_role_names and role in form_config.allowed_role_names else '' }}>
+                                    <label class="form-check-label" for="role-{{ role }}">{{ role }}</label>
+                                </div>
+                                {% endfor %}
+                                {% if not available_roles or (available_roles | length) == 0 %}
+                                <p class="small text-muted mb-0">No roles found. Create roles in Superset Security.</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
                         <div class="row data-entry-permissions-row">
                             <div class="col-md-4">
                                 <div class="form-check">

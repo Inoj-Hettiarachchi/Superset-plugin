@@ -8,6 +8,7 @@ from datetime import datetime
 import logging
 
 from .models import FormConfiguration, FormField
+from .form_access import _user_role_names
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +23,34 @@ class FormConfigDAO:
     
     @staticmethod
     def get_all_active(session: Session) -> List[FormConfiguration]:
-        """Get all active form configurations"""
+        """Get all active form configurations (no user filter)."""
         return session.query(FormConfiguration).filter(
             FormConfiguration.is_active == True
         ).order_by(FormConfiguration.title).all()
+
+    @staticmethod
+    def get_all_active_for_user(session: Session, user) -> List[FormConfiguration]:
+        """
+        Get active forms the user can access: owner or has a role in allowed_role_names.
+        """
+        if not user:
+            return []
+        forms = session.query(FormConfiguration).filter(
+            FormConfiguration.is_active == True
+        ).order_by(FormConfiguration.title).all()
+        username = getattr(user, "username", None)
+        user_roles = set(_user_role_names(user))
+        out = []
+        for f in forms:
+            if f.created_by == username:
+                out.append(f)
+                continue
+            allowed = f.allowed_role_names or []
+            if not isinstance(allowed, list):
+                allowed = list(allowed) if allowed else []
+            if user_roles & set(allowed):
+                out.append(f)
+        return out
     
     @staticmethod
     def get_by_id(session: Session, form_id: int) -> Optional[FormConfiguration]:
@@ -53,6 +78,7 @@ class FormConfigDAO:
             allow_edit=data.get('allow_edit', True),
             allow_delete=data.get('allow_delete', False),
             created_by=created_by,
+            allowed_role_names=data.get('allowed_role_names') or [],
         )
         
         session.add(form)
@@ -78,9 +104,12 @@ class FormConfigDAO:
             return None
         
         # Update form fields
-        for key in ['title', 'description', 'is_active', 'allow_edit', 'allow_delete']:
+        for key in ['title', 'description', 'is_active', 'allow_edit', 'allow_delete', 'allowed_role_names']:
             if key in data:
-                setattr(form, key, data[key])
+                val = data[key]
+                if key == 'allowed_role_names' and val is not None and not isinstance(val, list):
+                    val = list(val) if val else []
+                setattr(form, key, val)
         
         form.updated_at = datetime.utcnow()
         session.commit()
