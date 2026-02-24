@@ -51,8 +51,13 @@ body.data-entry-plugin-page .navbar .container {
 }
 
 /* --- Simplify navbar: show only Home (on plugin pages) --- */
-.navbar .navbar-header {
+/* Hide Superset's default navbar header only when it's NOT our minimal nav (our Home lives in .navbar-header) */
+.navbar:not(.data-entry-nav-minimal) .navbar-header {
     display: none !important;
+}
+/* Ensure our minimal nav's header (with Home link) is visible */
+.navbar.data-entry-nav-minimal .navbar-header {
+    display: block !important;
 }
 /* Hide right-side menu first (user / admin dropdown) so it doesn't get the Home rule */
 .navbar .navbar-nav.navbar-right,
