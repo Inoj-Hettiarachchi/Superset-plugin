@@ -143,6 +143,9 @@ body.data-entry-plugin-page .navbar .container {
 }
 
 /* Form list page header */
+.data-entry-breadcrumb { margin-bottom: 0.5rem; }
+.data-entry-breadcrumb a { color: #0d6efd; text-decoration: none; }
+.data-entry-breadcrumb a:hover { text-decoration: underline; }
 .data-entry-page-title {
     margin-bottom: 0.25rem;
 }

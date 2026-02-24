@@ -6,9 +6,10 @@
 {% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="/data-entry-plugin/static/data_entry_plugin.css">
+<link rel="stylesheet" href="/data-entry-plugin/static/data_entry_plugin.css?v={{ data_entry_plugin_version|default('1.0.0') }}">
 <div class="data-entry-plugin-root">
 <div class="container-fluid">
+    <p class="data-entry-breadcrumb mb-2"><a href="/">Home</a></p>
     <div class="row">
         <div class="col-md-12">
             <h2>
