@@ -246,13 +246,13 @@ So: create/edit/delete users and assign roles in **Superset’s Security → Use
 
 Examples of roles that **can** see and use the plugin: `Admin`, `TENANT_OCEANICA_OCEANICASUB_X_Admin`, `MULTI_LOCATION_bione_at_sebastian_no_Admin`. Roles like `Alpha`, `Gamma`, `Public`, or `TENANT_OCEANICA_OCEANICASUB_X_Alpha` **cannot** see the Data Entry menu or access plugin routes.
 
-In addition, every view and API route is protected with **`@has_access`** (FAB). So in practice: a user must both pass FAB's permission check and have at least one role with "admin" in the name to use the plugin.
+Access to the plugin is controlled by **FAB/Superset permissions** (Security → List Permissions), not by role naming. See §9.6 for how to assign permissions to roles.
 
 ### 9.3 User mapping (how the current user is used)
 
 | Use | How it works |
 |-----|----------------|
-| **Authorization** | `g.user` is the current request's user. **Menu visibility:** user must have at least one role whose name contains "admin" (case-insensitive) to see the Data Entry menu. **Form list:** user sees only forms they own or forms where their role is in **allowed_role_names** (see §9.5). **Configure form:** only the **form owner** (`created_by`) can edit form config, fields, and "roles allowed to enter data". **Enter/view data:** owner or any user with a role in the form’s **allowed_role_names**. |
+| **Authorization** | `g.user` is the current request's user. **Menu visibility:** user must have the relevant FAB permission (e.g. **Data Entry Forms** with **can_list**, or **Data Entry Form Builder** with **can_build**) assigned to one of their roles. **Form list:** user sees only forms they own or forms where their role is in **allowed_role_names** (see §9.5). **Configure form:** only the **form owner** (`created_by`) can edit form config, fields, and "roles allowed to enter data". **Enter/view data:** owner or any user with a role in the form’s **allowed_role_names**. |
 | **Audit on records** | On **insert**, `DataEntryDAO.insert(..., username=g.user.username)` sets `created_by` (and `created_at` / `updated_at`) on the row. On **update**, the same `username` can be passed for an “updated by” concept if you add it. So “user mapping” for data is: **Superset username → `created_by` (and optionally updated_by) in the dynamic table**. |
 | **Form config audit** | When a form is **created**, `FormConfigDAO.create(..., created_by=g.user.username)` sets `created_by` on `form_configurations`. |
 
@@ -261,17 +261,30 @@ There is **no separate user table or ID** in the plugin: the **username string**
 ### 9.4 Summary flow
 
 1. User logs into **Superset** (FAB handles login and session).
-2. **Data Entry menu** – Shown only if the user has at least one role whose name contains "admin" (case-insensitive). Same check blocks direct access to plugin URLs for other users.
-3. User opens **Data Entry → Data Entry Forms** (only visible when the check above passes).
+2. **Data Entry menu** – Shown only if the user has a role with the right FAB permission (e.g. **Data Entry Forms** with **can_list**, or **Data Entry Form Builder** with **can_build**). Configure permissions in Security → List Roles.
+3. User opens **Data Entry → Data Entry Forms** (only visible when the permission check passes).
 4. **List forms** – `FormListView` / API: only forms the user can access (owner or role in allowed_role_names).
 5. **Enter data** – `DataEntryView` / API: only if user is owner or has a role in the form’s allowed_role_names; on submit, `g.user.username` is written to `created_by`.
-6. **Configure forms** – Only the **form owner** can open the form builder for an existing form, update form, delete form, or change "roles allowed to enter data". Creating a new form requires admin-like role; the creator becomes the owner.
+6. **Configure forms** – Only the **form owner** can open the form builder for an existing form, update form, delete form, or change "roles allowed to enter data". Creating a new form requires the **Data Entry Form Builder** permission; the creator becomes the owner.
 
-So: **users are managed in Superset; only users with "admin" in a role name can see the Data Entry menu**; **form list and data access** are restricted to form owner or users with a role in **allowed_role_names**; **only the owner** can configure a form.
+So: **users are managed in Superset; plugin access is controlled by FAB permissions** (see §9.6); **form list and data access** are restricted to form owner or users with a role in **allowed_role_names**; **only the owner** can configure a form.
 
 - **Authentication:** Delegated to Superset (FAB); plugin uses `g.user` and `@has_access`.
-- **Data Entry access:** Menu gated by role name contains "admin". Form list and enter/view data gated by **creator + role allowlist** (§9.5). Form configuration (edit/delete/set allowed roles) is **owner-only**.
+- **Data Entry access:** Menu and views gated by FAB permissions (**Data Entry Forms**, **Data Entry Form Builder**). Form list and enter/view data also gated by **creator + role allowlist** (§9.5). Form configuration (edit/delete/set allowed roles) is **owner-only**.
 - **Database:** Single Superset DB; same credentials for metadata and dynamic tables. No separate DB config.
+
+### 9.6 FAB permissions (Security UI)
+
+The plugin registers two permission **views** with FAB. After the plugin loads, they appear under **Security → List Permissions** (or when editing a role). Assign them to roles as needed.
+
+| View (resource) | Actions (permissions) | Purpose |
+|-----------------|----------------------|---------|
+| **Data Entry Forms** | can_list, can_entry, can_submit, can_grid, can_seed_download, can_csv_download, can_delete | List forms, enter data, view grid, download. Grant these to roles that may use forms and data. |
+| **Data Entry Form Builder** | can_build, can_save | Create new forms, open form builder, save form config. Grant to roles that may configure forms (form owner still required to edit an existing form). |
+
+- To **see the Data Entry menu and use forms:** assign the role **Data Entry Forms** with at least **can_list** (and **can_entry**, **can_submit**, **can_grid** for full use).
+- To **create new forms and see "Create New Form":** assign the role **Data Entry Form Builder** with **can_build** (and **can_save** for saving).
+- Permissions are configured per role in **Security → List Roles**; no dependency on the word "admin" in the role name.
 
 ### 9.5 Creator and role allowlist
 

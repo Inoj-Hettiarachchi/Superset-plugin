@@ -1,9 +1,13 @@
 """
 Flask-AppBuilder views for data entry plugin
 Provides web UI for form management and data entry
+
+Access is controlled by FAB/Superset permissions (Security > List Permissions).
+- "Data Entry Forms" + can_list, can_entry, can_submit, can_grid, etc.: use forms and data
+- "Data Entry Form Builder" + can_build, can_save: create and configure forms
 """
 from flask_appbuilder import BaseView, expose, has_access
-from flask import render_template, request, jsonify, flash, redirect, url_for, Response
+from flask import render_template, request, jsonify, flash, redirect, url_for, Response, current_app
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import csv
@@ -23,6 +27,19 @@ from .form_access import (
 
 logger = logging.getLogger(__name__)
 
+# FAB permission names (must match Security > List Permissions after plugin load)
+VIEW_FORMS = "Data Entry Forms"
+VIEW_BUILDER = "Data Entry Form Builder"
+PERM_LIST = "can_list"
+PERM_BUILD = "can_build"
+PERM_SAVE = "can_save"
+PERM_ENTRY = "can_entry"
+PERM_SUBMIT = "can_submit"
+PERM_GRID = "can_grid"
+PERM_SEED = "can_seed_download"
+PERM_CSV = "can_csv_download"
+PERM_DELETE = "can_delete"
+
 # Get the template folder path for this plugin
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_FOLDER = os.path.join(PLUGIN_DIR, 'templates')
@@ -36,36 +53,27 @@ def get_db_session():
     return Session(), engine
 
 
-def user_has_data_entry_access():
-    """
-    True if the current user has at least one role whose name contains 'admin' (case-insensitive).
-    Used for menu visibility, view access, and form-builder admin checks.
-    """
-    from flask import g
-    if not g or not getattr(g, 'user', None):
+def can_create_form():
+    """True if current user has FAB permission to use the form builder (create/configure forms)."""
+    try:
+        return current_app.appbuilder.sm.has_access(PERM_BUILD, VIEW_BUILDER)
+    except Exception:
         return False
-    user = g.user
-    roles = getattr(user, 'roles', None) or []
-    return any('admin' in getattr(role, 'name', '').lower() for role in roles)
-
-
-def is_admin():
-    """Check if current user has an admin-like role (name contains 'admin', case-insensitive)."""
-    return user_has_data_entry_access()
 
 
 class FormListView(BaseView):
     """
-    View to list all data entry forms
-    Main landing page for the plugin
+    View to list all data entry forms.
+    Access: FAB permission "Data Entry Forms" + can_list.
     """
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/forms"
     default_view = "list"
+    class_permission_name = VIEW_FORMS
 
     def is_accessible(self):
-        return user_has_data_entry_access()
-    
+        return self.appbuilder.sm.has_access(PERM_LIST, self.class_permission_name)
+
     @expose('/list/')
     @has_access
     def list(self):
@@ -75,11 +83,10 @@ class FormListView(BaseView):
             from flask import g
             session, engine = get_db_session()
             forms = FormConfigDAO.get_all_active_for_user(session, g.user)
-            
             return self.render_template(
                 'data_entry/form_list.html',
                 forms=forms,
-                is_admin=is_admin(),
+                can_create_form=can_create_form(),
                 current_username=g.user.username if g.user else None,
             )
         except Exception as e:
@@ -93,26 +100,22 @@ class FormListView(BaseView):
 
 class FormBuilderView(BaseView):
     """
-    View for building and editing forms
-    Admin only
+    View for building and editing forms.
+    Access: FAB permission "Data Entry Form Builder" + can_build.
     """
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/builder"
     default_view = "build"
+    class_permission_name = VIEW_BUILDER
 
     def is_accessible(self):
-        return user_has_data_entry_access()
-    
+        return self.appbuilder.sm.has_access(PERM_BUILD, self.class_permission_name)
+
     @expose('/')
     @expose('/<int:form_id>')
     @has_access
     def build(self, form_id=None):
         """Form builder interface"""
-        # Check admin permission
-        if not is_admin():
-            flash("Admin access required", "danger")
-            return redirect('/data-entry/forms/list/')
-        
         session = None
         try:
             from flask import g
@@ -149,9 +152,6 @@ class FormBuilderView(BaseView):
     @has_access
     def save(self):
         """Save form configuration with fields"""
-        if not is_admin():
-            return jsonify({'error': 'Admin access required'}), 403
-        
         session = None
         try:
             from flask import g
@@ -223,15 +223,17 @@ class FormBuilderView(BaseView):
 
 class DataEntryView(BaseView):
     """
-    View for entering data via forms
+    View for entering data via forms.
+    Access: FAB permission "Data Entry Forms" + can_entry, can_submit.
     """
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/entry"
     default_view = "entry"
+    class_permission_name = VIEW_FORMS
 
     def is_accessible(self):
-        return user_has_data_entry_access()
-    
+        return self.appbuilder.sm.has_access(PERM_ENTRY, self.class_permission_name)
+
     @expose('/<int:form_id>')
     @has_access
     def entry(self, form_id):
@@ -302,15 +304,17 @@ class DataEntryView(BaseView):
 
 class DataGridView(BaseView):
     """
-    View for viewing submitted data in table format
+    View for viewing submitted data in table format.
+    Access: FAB permission "Data Entry Forms" + can_grid, etc.
     """
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/data"
     default_view = "grid"
+    class_permission_name = VIEW_FORMS
 
     def is_accessible(self):
-        return user_has_data_entry_access()
-    
+        return self.appbuilder.sm.has_access(PERM_GRID, self.class_permission_name)
+
     @expose('/<int:form_id>')
     @has_access
     def grid(self, form_id):
@@ -351,7 +355,7 @@ class DataGridView(BaseView):
                 page=page,
                 per_page=per_page,
                 total_pages=total_pages,
-                is_admin=is_admin()
+                can_create_form=can_create_form()
             )
             
         except Exception as e:

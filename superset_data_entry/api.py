@@ -1,8 +1,11 @@
 """
 REST API endpoints for data entry plugin
 Provides form management and data entry operations
+
+Access is controlled by FAB/Superset permissions (same as views).
 """
-from flask import Blueprint, request, jsonify, g
+from functools import wraps
+from flask import Blueprint, request, jsonify, g, current_app
 from flask_appbuilder.security.decorators import has_access
 from sqlalchemy.orm import sessionmaker
 import logging
@@ -11,6 +14,12 @@ from .dao import FormConfigDAO, FormFieldDAO, DataEntryDAO
 from .validation import ValidationEngine
 from .table_manager import TableManager
 from .form_access import user_can_enter_data_for_form, user_can_configure_form
+from .views import (
+    VIEW_FORMS,
+    VIEW_BUILDER,
+    PERM_LIST,
+    PERM_BUILD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,26 +29,21 @@ data_entry_api_bp = Blueprint('data_entry_api', __name__)
 
 def get_db_session():
     """Get database session and shared engine from Flask app context"""
-    from flask import current_app
     engine = current_app.config['DATA_ENTRY_ENGINE']
     Session = sessionmaker(bind=engine)
     return Session(), engine
 
 
-def user_has_data_entry_access(user):
-    """
-    True if the user has at least one role whose name contains 'admin' (case-insensitive).
-    Used for API admin-only endpoints (form config create/update/delete).
-    """
-    if not user:
-        return False
-    roles = getattr(user, 'roles', None) or []
-    return any('admin' in getattr(role, 'name', '').lower() for role in roles)
-
-
-def is_admin(user):
-    """Check if user has an admin-like role (name contains 'admin', case-insensitive)."""
-    return user_has_data_entry_access(user)
+def require_fab_permission(permission: str, view_name: str):
+    """Decorator: require FAB permission (permission, view_name) or return 403."""
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            if not current_app.appbuilder.sm.has_access(permission, view_name):
+                return jsonify({'error': 'Access denied'}), 403
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator
 
 
 # =============================================================================
@@ -48,6 +52,7 @@ def is_admin(user):
 
 @data_entry_api_bp.route('/forms', methods=['GET'])
 @has_access
+@require_fab_permission(PERM_LIST, VIEW_FORMS)
 def list_forms():
     """
     List all active forms
@@ -70,6 +75,7 @@ def list_forms():
 
 @data_entry_api_bp.route('/forms/<int:form_id>', methods=['GET'])
 @has_access
+@require_fab_permission(PERM_LIST, VIEW_FORMS)
 def get_form(form_id):
     """
     Get form configuration with fields
@@ -101,10 +107,11 @@ def get_form(form_id):
 
 @data_entry_api_bp.route('/forms', methods=['POST'])
 @has_access
+@require_fab_permission(PERM_BUILD, VIEW_BUILDER)
 def create_form():
     """
-    Create new form configuration (Admin only)
-    
+    Create new form configuration (requires Data Entry Form Builder permission)
+
     Request body:
         {
             "name": "vessel_shift_config",
@@ -119,10 +126,6 @@ def create_form():
     """
     session = None
     try:
-        # Check admin permission
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         data = request.json
         
         # Validate required fields
@@ -159,9 +162,10 @@ def create_form():
 
 @data_entry_api_bp.route('/forms/<int:form_id>', methods=['PUT'])
 @has_access
+@require_fab_permission(PERM_BUILD, VIEW_BUILDER)
 def update_form(form_id):
     """
-    Update form configuration (Admin only)
+    Update form configuration (requires Data Entry Form Builder + owner)
     
     Args:
         form_id: Form ID
@@ -171,12 +175,8 @@ def update_form(form_id):
     """
     session = None
     try:
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         data = request.json
         session, engine = get_db_session()
-        
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
@@ -199,10 +199,11 @@ def update_form(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>', methods=['DELETE'])
 @has_access
+@require_fab_permission(PERM_BUILD, VIEW_BUILDER)
 def delete_form(form_id):
     """
-    Delete form configuration (Admin only)
-    Does NOT delete the data table
+    Delete form configuration (requires Data Entry Form Builder + owner).
+    Does NOT delete the data table.
     
     Args:
         form_id: Form ID
@@ -212,11 +213,7 @@ def delete_form(form_id):
     """
     session = None
     try:
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         session, engine = get_db_session()
-        
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
@@ -243,9 +240,10 @@ def delete_form(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/fields', methods=['POST'])
 @has_access
+@require_fab_permission(PERM_BUILD, VIEW_BUILDER)
 def add_field(form_id):
     """
-    Add field to form (Admin only)
+    Add field to form (requires Data Entry Form Builder + owner)
     
     Args:
         form_id: Form ID
@@ -255,12 +253,8 @@ def add_field(form_id):
     """
     session = None
     try:
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         data = request.json
         session, engine = get_db_session()
-        
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
@@ -293,6 +287,7 @@ def add_field(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries', methods=['GET'])
 @has_access
+@require_fab_permission(PERM_LIST, VIEW_FORMS)
 def list_entries(form_id):
     """
     List data entries for a form
@@ -337,6 +332,7 @@ def list_entries(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries', methods=['POST'])
 @has_access
+@require_fab_permission(PERM_LIST, VIEW_FORMS)
 def submit_entry(form_id):
     """
     Submit new data entry
@@ -386,6 +382,7 @@ def submit_entry(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries/<int:record_id>', methods=['PUT'])
 @has_access
+@require_fab_permission(PERM_LIST, VIEW_FORMS)
 def update_entry(form_id, record_id):
     """
     Update existing data entry
@@ -438,6 +435,7 @@ def update_entry(form_id, record_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries/<int:record_id>', methods=['DELETE'])
 @has_access
+@require_fab_permission(PERM_LIST, VIEW_FORMS)
 def delete_entry(form_id, record_id):
     """
     Delete data entry
@@ -487,6 +485,7 @@ def delete_entry(form_id, record_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/validate', methods=['POST'])
 @has_access
+@require_fab_permission(PERM_LIST, VIEW_FORMS)
 def validate_data(form_id):
     """
     Validate data without saving
