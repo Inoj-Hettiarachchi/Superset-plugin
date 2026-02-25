@@ -8,9 +8,29 @@ from datetime import datetime
 import logging
 
 from .models import FormConfiguration, FormField
-from .form_access import _user_role_names
+from .form_access import _user_role_names, _normalize_role_set
 
 logger = logging.getLogger(__name__)
+
+
+def _role_names_for_username_from_db(session: Session, username: str) -> List[str]:
+    """Load role names for a user from FAB tables (ab_user, ab_user_role, ab_role). Fallback when user.roles is not populated."""
+    if not username:
+        return []
+    try:
+        result = session.execute(
+            text("""
+                SELECT ar.name FROM ab_role ar
+                INNER JOIN ab_user_role aur ON aur.role_id = ar.id
+                INNER JOIN ab_user au ON au.id = aur.user_id
+                WHERE au.username = :username
+            """),
+            {"username": username},
+        )
+        return [row[0] for row in result if row[0]]
+    except Exception as e:
+        logger.debug("Could not load roles from DB for user %s: %s", username, e)
+        return []
 
 
 class FormConfigDAO:
@@ -39,16 +59,18 @@ class FormConfigDAO:
             FormConfiguration.is_active == True
         ).order_by(FormConfiguration.title).all()
         username = getattr(user, "username", None)
-        user_roles = set(_user_role_names(user))
+        role_names = _user_role_names(user)
+        if not role_names and username:
+            role_names = _role_names_for_username_from_db(session, username)
+        user_roles = _normalize_role_set(role_names)
         out = []
         for f in forms:
             if f.created_by == username:
                 out.append(f)
                 continue
             allowed = f.allowed_role_names or []
-            if not isinstance(allowed, list):
-                allowed = list(allowed) if allowed else []
-            if user_roles & set(allowed):
+            form_allowed = _normalize_role_set(allowed)
+            if user_roles & form_allowed:
                 out.append(f)
         return out
     

@@ -245,7 +245,7 @@ class DataEntryView(BaseView):
             if not form_config or not form_config.is_active:
                 flash("Form not found or inactive", "danger")
                 return redirect('/data-entry/forms/list/')
-            if not user_can_enter_data_for_form(g.user, form_config):
+            if not user_can_enter_data_for_form(g.user, form_config, engine):
                 flash("Access denied to this form", "danger")
                 return redirect('/data-entry/forms/list/')
             
@@ -273,7 +273,7 @@ class DataEntryView(BaseView):
             form_config = FormConfigDAO.get_by_id(session, form_id)
             if not form_config or not form_config.is_active:
                 return jsonify({'error': 'Form not found or inactive'}), 404
-            if not user_can_enter_data_for_form(g.user, form_config):
+            if not user_can_enter_data_for_form(g.user, form_config, engine):
                 return jsonify({'error': 'Access denied to this form'}), 403
             
             data = request.json
@@ -324,7 +324,7 @@ class DataGridView(BaseView):
             if not form_config:
                 flash("Form not found", "danger")
                 return redirect('/data-entry/forms/list/')
-            if not user_can_enter_data_for_form(g.user, form_config):
+            if not user_can_enter_data_for_form(g.user, form_config, engine):
                 flash("Access denied to this form", "danger")
                 return redirect('/data-entry/forms/list/')
             
@@ -374,7 +374,7 @@ class DataGridView(BaseView):
             if not form_config:
                 flash("Form not found", "danger")
                 return redirect('/data-entry/forms/list/')
-            if not user_can_enter_data_for_form(g.user, form_config):
+            if not user_can_enter_data_for_form(g.user, form_config, engine):
                 flash("Access denied to this form", "danger")
                 return redirect('/data-entry/forms/list/')
             records = DataEntryDAO.get_all_for_export(engine, form_config.table_name)
@@ -421,7 +421,7 @@ class DataGridView(BaseView):
             if not form_config:
                 flash("Form not found", "danger")
                 return redirect('/data-entry/forms/list/')
-            if not user_can_enter_data_for_form(g.user, form_config):
+            if not user_can_enter_data_for_form(g.user, form_config, engine):
                 flash("Access denied to this form", "danger")
                 return redirect('/data-entry/forms/list/')
             records = DataEntryDAO.get_all_for_export(engine, form_config.table_name)
@@ -482,7 +482,7 @@ class DataGridView(BaseView):
             
             if not form_config:
                 return jsonify({'error': 'Form not found'}), 404
-            if not user_can_enter_data_for_form(g.user, form_config):
+            if not user_can_enter_data_for_form(g.user, form_config, engine):
                 return jsonify({'error': 'Access denied to this form'}), 403
             
             if not form_config.allow_delete:

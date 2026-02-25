@@ -87,7 +87,7 @@ def get_form(form_id):
         
         if not form:
             return jsonify({'error': 'Form not found'}), 404
-        if not user_can_enter_data_for_form(g.user, form):
+        if not user_can_enter_data_for_form(g.user, form, engine):
             return jsonify({'error': 'Form not found'}), 404
         
         return jsonify(form.to_dict(include_fields=True))
@@ -311,7 +311,7 @@ def list_entries(form_id):
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
-        if not user_can_enter_data_for_form(g.user, form):
+        if not user_can_enter_data_for_form(g.user, form, engine):
             return jsonify({'error': 'Form not found'}), 404
         
         page = request.args.get('page', 1, type=int)
@@ -357,7 +357,7 @@ def submit_entry(form_id):
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form or not form.is_active:
             return jsonify({'error': 'Form not found or inactive'}), 404
-        if not user_can_enter_data_for_form(g.user, form):
+        if not user_can_enter_data_for_form(g.user, form, engine):
             return jsonify({'error': 'Access denied to this form'}), 403
         
         data = request.json
@@ -404,7 +404,7 @@ def update_entry(form_id, record_id):
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
-        if not user_can_enter_data_for_form(g.user, form):
+        if not user_can_enter_data_for_form(g.user, form, engine):
             return jsonify({'error': 'Access denied to this form'}), 403
         
         if not form.allow_edit:
@@ -456,7 +456,7 @@ def delete_entry(form_id, record_id):
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
-        if not user_can_enter_data_for_form(g.user, form):
+        if not user_can_enter_data_for_form(g.user, form, engine):
             return jsonify({'error': 'Access denied to this form'}), 403
         
         if not form.allow_delete:
@@ -507,7 +507,7 @@ def validate_data(form_id):
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
-        if not user_can_enter_data_for_form(g.user, form):
+        if not user_can_enter_data_for_form(g.user, form, engine):
             return jsonify({'error': 'Access denied to this form'}), 403
         
         data = request.json

@@ -19,14 +19,51 @@ def user_is_form_owner(user: Any, form: Any) -> bool:
 
 
 def _user_role_names(user: Any) -> List[str]:
-    """Return list of role names for the user."""
+    """Return list of role names for the user (from FAB/Superset user.roles)."""
     if not user:
         return []
-    roles = getattr(user, "roles", None) or []
-    return [getattr(r, "name", "") or "" for r in roles if getattr(r, "name", None)]
+    roles = getattr(user, "roles", None)
+    if roles is None:
+        return []
+    # Force evaluation (e.g. lazy-loaded relationship) and collect names
+    try:
+        role_list = list(roles)
+    except Exception:
+        role_list = []
+    return [str(getattr(r, "name", "") or "").strip() for r in role_list if getattr(r, "name", None)]
 
 
-def user_can_enter_data_for_form(user: Any, form: Any) -> bool:
+def _normalize_role_set(role_list: Any) -> set:
+    """Normalize role names to lowercase for comparison; return set of non-empty strings."""
+    if not role_list:
+        return set()
+    if not isinstance(role_list, list):
+        role_list = list(role_list) if role_list else []
+    return {str(r).strip().lower() for r in role_list if str(r).strip()}
+
+
+def _user_role_names_from_db(engine, username: str) -> List[str]:
+    """Load role names for username from FAB tables. Use when user.roles is not populated."""
+    if not engine or not username:
+        return []
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT ar.name FROM ab_role ar
+                    INNER JOIN ab_user_role aur ON aur.role_id = ar.id
+                    INNER JOIN ab_user au ON au.id = aur.user_id
+                    WHERE au.username = :username
+                """),
+                {"username": username},
+            )
+            return [row[0] for row in result if row[0]]
+    except Exception as e:
+        logger.debug("Could not load roles from DB for user %s: %s", username, e)
+        return []
+
+
+def user_can_enter_data_for_form(user: Any, form: Any, engine=None) -> bool:
     """True if user can view/enter data: owner or has a role in form's allowed_role_names."""
     if not user or not form:
         return False
@@ -35,10 +72,14 @@ def user_can_enter_data_for_form(user: Any, form: Any) -> bool:
     allowed = form.allowed_role_names
     if not allowed:
         return False
-    if not isinstance(allowed, list):
-        allowed = list(allowed) if allowed else []
-    user_roles = set(_user_role_names(user))
-    return bool(user_roles & set(allowed))
+    role_names = _user_role_names(user)
+    if not role_names:
+        username = getattr(user, "username", None)
+        if username and engine:
+            role_names = _user_role_names_from_db(engine, username)
+    user_roles = _normalize_role_set(role_names)
+    form_allowed = _normalize_role_set(allowed)
+    return bool(user_roles & form_allowed)
 
 
 def user_can_configure_form(user: Any, form: Any) -> bool:
