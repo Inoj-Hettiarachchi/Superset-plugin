@@ -216,20 +216,36 @@ class FormBuilderView(BaseView):
             
             if 'id' in data and data['id']:
                 # Update existing form: only owner can save
-                form = FormConfigDAO.get_by_id(session, data['id'])
+                form_id = int(data['id']) if data['id'] else None
+                form = FormConfigDAO.get_by_id(session, form_id)
                 if not form:
                     return jsonify({'error': 'Form not found'}), 404
                 if not user_can_configure_form(g.user, form):
                     return jsonify({'error': 'Only the form owner can update this form'}), 403
-                form = FormConfigDAO.update(session, data['id'], data)
+                # Build update payload so allowed_role_names is always included (from client)
+                update_data = {
+                    'title': data.get('title'),
+                    'description': data.get('description'),
+                    'is_active': data.get('is_active', True),
+                    'allow_edit': data.get('allow_edit', True),
+                    'allow_delete': data.get('allow_delete', False),
+                    'allowed_role_names': data.get('allowed_role_names') if data.get('allowed_role_names') is not None else [],
+                }
+                if not isinstance(update_data['allowed_role_names'], list):
+                    update_data['allowed_role_names'] = list(update_data['allowed_role_names']) if update_data['allowed_role_names'] else []
+                form = FormConfigDAO.update(session, form_id, update_data)
                 message = "Form updated successfully"
-                
                 # Delete existing fields and recreate (simple approach)
+                form = FormConfigDAO.get_by_id(session, form_id)
                 for field in form.fields:
                     session.delete(field)
                 session.commit()
             else:
-                # Create new form
+                # Create new form – ensure allowed_role_names is a list
+                allowed = data.get('allowed_role_names')
+                if allowed is not None and not isinstance(allowed, list):
+                    data = dict(data)
+                    data['allowed_role_names'] = list(allowed) if allowed else []
                 form = FormConfigDAO.create(session, data, created_by=g.user.username)
                 message = "Form created successfully"
             

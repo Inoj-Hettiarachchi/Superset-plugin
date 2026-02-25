@@ -120,19 +120,17 @@ class FormConfigDAO:
     
     @staticmethod
     def update(session: Session, form_id: int, data: dict) -> Optional[FormConfiguration]:
-        """Update form configuration"""
+        """Update form configuration (including allowed_role_names)."""
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return None
-        
-        # Update form fields
-        for key in ['title', 'description', 'is_active', 'allow_edit', 'allow_delete', 'allowed_role_names']:
+        # Always persist allowed_role_names when present in payload
+        if 'allowed_role_names' in data:
+            val = data['allowed_role_names']
+            form.allowed_role_names = list(val) if isinstance(val, (list, tuple)) else ([] if val is None else [])
+        for key in ['title', 'description', 'is_active', 'allow_edit', 'allow_delete']:
             if key in data:
-                val = data[key]
-                if key == 'allowed_role_names' and val is not None and not isinstance(val, list):
-                    val = list(val) if val else []
-                setattr(form, key, val)
-        
+                setattr(form, key, data[key])
         form.updated_at = datetime.utcnow()
         session.commit()
         return form
