@@ -15,10 +15,9 @@ from .validation import ValidationEngine
 from .table_manager import TableManager
 from .form_access import user_can_enter_data_for_form, user_can_configure_form
 from .views import (
-    VIEW_FORMS,
-    VIEW_BUILDER,
-    PERM_LIST,
-    PERM_BUILD,
+    can_configure_forms,
+    can_access_form_list_and_submit,
+    can_access_grid,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,16 +33,34 @@ def get_db_session():
     return Session(), engine
 
 
-def require_fab_permission(permission: str, view_name: str):
-    """Decorator: require FAB permission (permission, view_name) or return 403."""
-    def decorator(f):
-        @wraps(f)
-        def wrapped(*args, **kwargs):
-            if not current_app.appbuilder.sm.has_access(permission, view_name):
-                return jsonify({'error': 'Access denied'}), 403
-            return f(*args, **kwargs)
-        return wrapped
-    return decorator
+def require_can_configure_forms(f):
+    """Decorator: require can_configure_forms (3) or return 403."""
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not can_configure_forms():
+            return jsonify({'error': 'Access denied'}), 403
+        return f(*args, **kwargs)
+    return wrapped
+
+
+def require_can_list_and_submit(f):
+    """Decorator: require can_manage_data or can_entry_only (4 or 5) or return 403."""
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not can_access_form_list_and_submit():
+            return jsonify({'error': 'Access denied'}), 403
+        return f(*args, **kwargs)
+    return wrapped
+
+
+def require_can_manage_data(f):
+    """Decorator: require can_manage_data (4) or return 403."""
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not can_access_grid():
+            return jsonify({'error': 'Access denied'}), 403
+        return f(*args, **kwargs)
+    return wrapped
 
 
 # =============================================================================
@@ -52,7 +69,7 @@ def require_fab_permission(permission: str, view_name: str):
 
 @data_entry_api_bp.route('/forms', methods=['GET'])
 @has_access
-@require_fab_permission(PERM_LIST, VIEW_FORMS)
+@require_can_list_and_submit
 def list_forms():
     """
     List all active forms
@@ -75,7 +92,7 @@ def list_forms():
 
 @data_entry_api_bp.route('/forms/<int:form_id>', methods=['GET'])
 @has_access
-@require_fab_permission(PERM_LIST, VIEW_FORMS)
+@require_can_list_and_submit
 def get_form(form_id):
     """
     Get form configuration with fields
@@ -107,7 +124,7 @@ def get_form(form_id):
 
 @data_entry_api_bp.route('/forms', methods=['POST'])
 @has_access
-@require_fab_permission(PERM_BUILD, VIEW_BUILDER)
+@require_can_configure_forms
 def create_form():
     """
     Create new form configuration (requires Data Entry Form Builder permission)
@@ -162,7 +179,7 @@ def create_form():
 
 @data_entry_api_bp.route('/forms/<int:form_id>', methods=['PUT'])
 @has_access
-@require_fab_permission(PERM_BUILD, VIEW_BUILDER)
+@require_can_configure_forms
 def update_form(form_id):
     """
     Update form configuration (requires Data Entry Form Builder + owner)
@@ -199,7 +216,7 @@ def update_form(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>', methods=['DELETE'])
 @has_access
-@require_fab_permission(PERM_BUILD, VIEW_BUILDER)
+@require_can_configure_forms
 def delete_form(form_id):
     """
     Delete form configuration (requires Data Entry Form Builder + owner).
@@ -240,7 +257,7 @@ def delete_form(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/fields', methods=['POST'])
 @has_access
-@require_fab_permission(PERM_BUILD, VIEW_BUILDER)
+@require_can_configure_forms
 def add_field(form_id):
     """
     Add field to form (requires Data Entry Form Builder + owner)
@@ -287,7 +304,7 @@ def add_field(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries', methods=['GET'])
 @has_access
-@require_fab_permission(PERM_LIST, VIEW_FORMS)
+@require_can_manage_data
 def list_entries(form_id):
     """
     List data entries for a form
@@ -332,7 +349,7 @@ def list_entries(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries', methods=['POST'])
 @has_access
-@require_fab_permission(PERM_LIST, VIEW_FORMS)
+@require_can_list_and_submit
 def submit_entry(form_id):
     """
     Submit new data entry
@@ -382,7 +399,7 @@ def submit_entry(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries/<int:record_id>', methods=['PUT'])
 @has_access
-@require_fab_permission(PERM_LIST, VIEW_FORMS)
+@require_can_manage_data
 def update_entry(form_id, record_id):
     """
     Update existing data entry
@@ -435,7 +452,7 @@ def update_entry(form_id, record_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries/<int:record_id>', methods=['DELETE'])
 @has_access
-@require_fab_permission(PERM_LIST, VIEW_FORMS)
+@require_can_manage_data
 def delete_entry(form_id, record_id):
     """
     Delete data entry
@@ -485,7 +502,7 @@ def delete_entry(form_id, record_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/validate', methods=['POST'])
 @has_access
-@require_fab_permission(PERM_LIST, VIEW_FORMS)
+@require_can_list_and_submit
 def validate_data(form_id):
     """
     Validate data without saving

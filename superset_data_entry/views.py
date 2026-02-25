@@ -2,9 +2,11 @@
 Flask-AppBuilder views for data entry plugin
 Provides web UI for form management and data entry
 
-Access is controlled by FAB/Superset permissions (Security > List Permissions).
-- "Data Entry Forms" + can_list, can_entry, can_submit, can_grid, etc.: use forms and data
-- "Data Entry Form Builder" + can_build, can_save: create and configure forms
+Access is controlled by a single FAB view "Data Entry" with three permissions (Security > List Permissions):
+- can_configure_forms: create and configure forms (form builder)
+- can_manage_data: view form list, enter data, view grid, edit/delete entries
+- can_entry_only: view form list and submit entries only (no grid, no edit/delete)
+Having any of these = has access to the plugin (1). None = no access (2).
 """
 from flask_appbuilder import BaseView, expose, has_access
 from flask import render_template, request, jsonify, flash, redirect, url_for, Response, current_app
@@ -27,18 +29,66 @@ from .form_access import (
 
 logger = logging.getLogger(__name__)
 
-# FAB permission names (must match Security > List Permissions after plugin load)
-VIEW_FORMS = "Data Entry Forms"
-VIEW_BUILDER = "Data Entry Form Builder"
-PERM_LIST = "can_list"
-PERM_BUILD = "can_build"
-PERM_SAVE = "can_save"
-PERM_ENTRY = "can_entry"
-PERM_SUBMIT = "can_submit"
-PERM_GRID = "can_grid"
-PERM_SEED = "can_seed_download"
-PERM_CSV = "can_csv_download"
-PERM_DELETE = "can_delete"
+# Single FAB view and three permission levels (Security > List Permissions)
+DATA_ENTRY_VIEW = "Data Entry"
+PERM_CONFIGURE_FORMS = "can_configure_forms"   # (3) create/configure forms
+PERM_MANAGE_DATA = "can_manage_data"           # (4) view data, manage entries (grid, edit, delete)
+PERM_ENTRY_ONLY = "can_entry_only"             # (5) only submit entries (no grid/edit/delete)
+
+
+def _sm():
+    return current_app.appbuilder.sm
+
+
+def can_configure_forms():
+    """(3) Can create forms and configure forms."""
+    try:
+        return _sm().has_access(PERM_CONFIGURE_FORMS, DATA_ENTRY_VIEW)
+    except Exception:
+        return False
+
+
+def can_manage_data():
+    """(4) Can view data in forms and manage data (grid, edit, delete)."""
+    try:
+        return _sm().has_access(PERM_MANAGE_DATA, DATA_ENTRY_VIEW)
+    except Exception:
+        return False
+
+
+def can_entry_only():
+    """(5) Can only make data entry (submit; no grid view or edit/delete)."""
+    try:
+        return _sm().has_access(PERM_ENTRY_ONLY, DATA_ENTRY_VIEW)
+    except Exception:
+        return False
+
+
+def has_plugin_access():
+    """(1) Has access to the plugin (has any of the three permissions)."""
+    return can_configure_forms() or can_manage_data() or can_entry_only()
+
+
+def can_access_form_list_and_submit():
+    """Can see form list and submit entries (4 or 5)."""
+    return can_manage_data() or can_entry_only()
+
+
+def can_access_grid():
+    """Can view data grid and edit/delete entries (4 only)."""
+    return can_manage_data()
+
+
+def _require_login():
+    """Redirect to login if current user is not authenticated. Return None if OK, else redirect response."""
+    from flask import g
+    if not getattr(g, "user", None) or not getattr(g.user, "is_authenticated", True):
+        try:
+            login_url = current_app.appbuilder.sm.get_url_for_login(request.url)
+            return redirect(login_url or "/login")
+        except Exception:
+            return redirect("/login")
+    return None
 
 # Get the template folder path for this plugin
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -53,31 +103,29 @@ def get_db_session():
     return Session(), engine
 
 
-def can_create_form():
-    """True if current user has FAB permission to use the form builder (create/configure forms)."""
-    try:
-        return current_app.appbuilder.sm.has_access(PERM_BUILD, VIEW_BUILDER)
-    except Exception:
-        return False
-
-
 class FormListView(BaseView):
     """
     View to list all data entry forms.
-    Access: FAB permission "Data Entry Forms" + can_list.
+    Access: has_plugin_access (any of can_configure_forms, can_manage_data, can_entry_only).
     """
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/forms"
     default_view = "list"
-    class_permission_name = VIEW_FORMS
+    class_permission_name = DATA_ENTRY_VIEW
+    base_permissions = [PERM_CONFIGURE_FORMS, PERM_MANAGE_DATA, PERM_ENTRY_ONLY]
 
     def is_accessible(self):
-        return self.appbuilder.sm.has_access(PERM_LIST, self.class_permission_name)
+        return has_plugin_access()
 
     @expose('/list/')
-    @has_access
     def list(self):
-        """Show list of all active forms"""
+        """Show list of all active forms (allowed for can_manage_data or can_entry_only)."""
+        r = _require_login()
+        if r is not None:
+            return r
+        if not can_access_form_list_and_submit():
+            flash("You do not have permission to view the form list", "danger")
+            return redirect(url_for("FormBuilderView.build") if can_configure_forms() else "/")
         session = None
         try:
             from flask import g
@@ -86,7 +134,8 @@ class FormListView(BaseView):
             return self.render_template(
                 'data_entry/form_list.html',
                 forms=forms,
-                can_create_form=can_create_form(),
+                can_create_form=can_configure_forms(),
+                can_view_data=can_access_grid(),
                 current_username=g.user.username if g.user else None,
             )
         except Exception as e:
@@ -101,15 +150,17 @@ class FormListView(BaseView):
 class FormBuilderView(BaseView):
     """
     View for building and editing forms.
-    Access: FAB permission "Data Entry Form Builder" + can_build.
+    Access: can_configure_forms (3) only.
     """
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/builder"
     default_view = "build"
-    class_permission_name = VIEW_BUILDER
+    class_permission_name = DATA_ENTRY_VIEW
+    base_permissions = [PERM_CONFIGURE_FORMS, PERM_MANAGE_DATA, PERM_ENTRY_ONLY]
+    method_permission_name = {"build": "configure_forms", "save": "configure_forms"}
 
     def is_accessible(self):
-        return self.appbuilder.sm.has_access(PERM_BUILD, self.class_permission_name)
+        return can_configure_forms()
 
     @expose('/')
     @expose('/<int:form_id>')
@@ -151,7 +202,9 @@ class FormBuilderView(BaseView):
     @expose('/save', methods=['POST'])
     @has_access
     def save(self):
-        """Save form configuration with fields"""
+        """Save form configuration with fields (requires can_configure_forms)."""
+        if not can_configure_forms():
+            return jsonify({'error': 'Access denied'}), 403
         session = None
         try:
             from flask import g
@@ -224,20 +277,26 @@ class FormBuilderView(BaseView):
 class DataEntryView(BaseView):
     """
     View for entering data via forms.
-    Access: FAB permission "Data Entry Forms" + can_entry, can_submit.
+    Access: can_manage_data or can_entry_only (4 or 5).
     """
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/entry"
     default_view = "entry"
-    class_permission_name = VIEW_FORMS
+    class_permission_name = DATA_ENTRY_VIEW
+    base_permissions = [PERM_CONFIGURE_FORMS, PERM_MANAGE_DATA, PERM_ENTRY_ONLY]
 
     def is_accessible(self):
-        return self.appbuilder.sm.has_access(PERM_ENTRY, self.class_permission_name)
+        return can_access_form_list_and_submit()
 
     @expose('/<int:form_id>')
-    @has_access
     def entry(self, form_id):
-        """Data entry form"""
+        """Data entry form (requires can_manage_data or can_entry_only)."""
+        r = _require_login()
+        if r is not None:
+            return r
+        if not can_access_form_list_and_submit():
+            flash("Access denied", "danger")
+            return redirect("/data-entry/forms/list/")
         session = None
         try:
             from flask import g
@@ -264,9 +323,13 @@ class DataEntryView(BaseView):
                 session.close()
     
     @expose('/<int:form_id>/submit', methods=['POST'])
-    @has_access
     def submit(self, form_id):
-        """Submit form data"""
+        """Submit form data (requires can_manage_data or can_entry_only)."""
+        r = _require_login()
+        if r is not None:
+            return r
+        if not can_access_form_list_and_submit():
+            return jsonify({'error': 'Access denied'}), 403
         session = None
         try:
             from flask import g
@@ -305,20 +368,25 @@ class DataEntryView(BaseView):
 class DataGridView(BaseView):
     """
     View for viewing submitted data in table format.
-    Access: FAB permission "Data Entry Forms" + can_grid, etc.
+    Access: can_manage_data (4) only (no access for can_entry_only).
     """
     base_template = "data_entry/minimal_base.html"
     route_base = "/data-entry/data"
     default_view = "grid"
-    class_permission_name = VIEW_FORMS
+    class_permission_name = DATA_ENTRY_VIEW
+    base_permissions = [PERM_CONFIGURE_FORMS, PERM_MANAGE_DATA, PERM_ENTRY_ONLY]
+    method_permission_name = {"grid": "manage_data", "seed_download": "manage_data", "csv_download": "manage_data", "delete": "manage_data"}
 
     def is_accessible(self):
-        return self.appbuilder.sm.has_access(PERM_GRID, self.class_permission_name)
+        return can_access_grid()
 
     @expose('/<int:form_id>')
     @has_access
     def grid(self, form_id):
-        """Data grid view"""
+        """Data grid view (requires can_manage_data)."""
+        if not can_access_grid():
+            flash("You do not have permission to view data", "danger")
+            return redirect("/data-entry/forms/list/")
         session = None
         try:
             from flask import g
@@ -355,7 +423,7 @@ class DataGridView(BaseView):
                 page=page,
                 per_page=per_page,
                 total_pages=total_pages,
-                can_create_form=can_create_form()
+                can_create_form=can_configure_forms()
             )
             
         except Exception as e:
@@ -369,7 +437,10 @@ class DataGridView(BaseView):
     @expose('/<int:form_id>/seed')
     @has_access
     def seed_download(self, form_id):
-        """Download form data as a JSON seed file."""
+        """Download form data as a JSON seed file (requires can_manage_data)."""
+        if not can_access_grid():
+            flash("Access denied", "danger")
+            return redirect(request.referrer or "/data-entry/forms/list/")
         session = None
         try:
             from flask import g
@@ -416,7 +487,10 @@ class DataGridView(BaseView):
     @expose('/<int:form_id>/csv')
     @has_access
     def csv_download(self, form_id):
-        """Download form data as CSV."""
+        """Download form data as CSV (requires can_manage_data)."""
+        if not can_access_grid():
+            flash("Access denied", "danger")
+            return redirect(request.referrer or "/data-entry/forms/list/")
         session = None
         try:
             from flask import g
@@ -477,7 +551,9 @@ class DataGridView(BaseView):
     @expose('/<int:form_id>/delete/<int:record_id>', methods=['POST'])
     @has_access
     def delete(self, form_id, record_id):
-        """Delete a record"""
+        """Delete a record (requires can_manage_data)."""
+        if not can_access_grid():
+            return jsonify({'error': 'Access denied'}), 403
         session = None
         try:
             from flask import g
