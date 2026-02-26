@@ -27,6 +27,7 @@ setup(
     entry_points={
         'console_scripts': [
             'superset-data-entry-setup=superset_data_entry.setup_cli:main',
+            'superset-data-entry-migrate=superset_data_entry.migrations_runner:main',
         ],
     },
     install_requires=[

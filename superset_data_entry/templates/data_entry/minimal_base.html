@@ -4,50 +4,45 @@
 {% block head_css %}
 {{ super() }}
 <style type="text/css">
-  body:has(.data-entry-plugin-root) { overflow-x: hidden; max-width: 100vw; padding-top: 56px; }
+  body:has(.data-entry-plugin-root) { overflow-x: hidden; max-width: 100vw; padding-top: 0; }
   .data-entry-plugin-root .container-fluid,
   .data-entry-plugin-root .container { max-width: 100%; padding-left: 1rem; padding-right: 1rem; }
   .data-entry-plugin-root .container-fluid { padding-top: 1.25rem; }
-  body:has(.data-entry-plugin-root) .navbar { border: none; min-height: 50px; height: 50px; }
-  body:has(.data-entry-plugin-root) .navbar .container { max-width: 100%; }
+  /* Hide the top navbar completely on data-entry plugin pages */
+  body:has(.data-entry-plugin-root) .navbar { display: none !important; }
 </style>
 {% endblock %}
 
-{# Override navbar so only Home is shown #}
+{# No top navbar on data-entry pages #}
 {% block navbar %}
-<nav class="navbar navbar-inverse navbar-fixed-top data-entry-nav-minimal" role="navigation">
-    <div class="container">
-        <div class="navbar-header">
-            <a class="navbar-brand" href="/">Home</a>
-        </div>
-    </div>
+<nav class="navbar navbar-inverse navbar-fixed-top data-entry-nav-hidden" role="navigation" style="display: none !important;">
 </nav>
 {% endblock %}
 
-{# Fallback: if navbar block is not used, replace navbar via JS and ensure only Home shows #}
+{# Mark plugin page for CSS; no extra nav bar or duplicate Home #}
 {% block tail_js %}
 {{ super() }}
 <script{% if csp_nonce is defined %} nonce="{{ csp_nonce() }}"{% endif %}>
 (function() {
-    function simplifyNavbar() {
-        var navbar = document.querySelector('.navbar');
-        if (!navbar) return;
-        navbar.classList.add('data-entry-nav-minimal');
-        navbar.innerHTML = '<div class="container"><div class="navbar-header"><a class="navbar-brand" href="/">Home</a></div></div>';
-    }
     function markPluginPage() { document.body.classList.add('data-entry-plugin-page'); }
+    function hideNavbar() {
+        var navbar = document.querySelector('.navbar');
+        if (navbar) {
+            navbar.style.setProperty('display', 'none', 'important');
+        }
+    }
     function init() {
         markPluginPage();
-        simplifyNavbar();
+        hideNavbar();
     }
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
             init();
-            setTimeout(simplifyNavbar, 150);
+            setTimeout(hideNavbar, 50);
         });
     } else {
         init();
-        setTimeout(simplifyNavbar, 150);
+        setTimeout(hideNavbar, 50);
     }
 })();
 </script>

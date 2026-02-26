@@ -70,22 +70,58 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Toggle options UI when field type changes to/from Select
     document.addEventListener('change', function(e) {
-        var typeSelect = e.target && e.target.classList && e.target.classList.contains('field-type');
-        if (typeSelect) {
-            var wrap = typeSelect.closest('.field-card').querySelector('.field-options-wrap');
-            if (wrap) wrap.style.display = typeSelect.value === 'select' ? 'block' : 'none';
-        }
+        if (!e.target || !e.target.classList || !e.target.classList.contains('field-type')) return;
+        var card = e.target.closest('.field-card');
+        if (!card) return;
+        var wrap = card.querySelector('.field-options-wrap');
+        if (wrap) wrap.style.display = e.target.value === 'select' ? 'block' : 'none';
     });
 
-    // Add option row (for Select fields)
-    document.addEventListener('click', function(e) {
-        if (e.target.closest('.add-option-btn')) {
-            var btn = e.target.closest('.add-option-btn');
-            var list = btn.previousElementSibling;
-            if (list && list.classList.contains('field-options-list')) list.insertAdjacentHTML('beforeend', getOptionRowHtml());
+    function findAddOptionButton(el) {
+        while (el && el !== document.body) {
+            if (el.classList && el.classList.contains('add-option-btn')) return el;
+            el = el.parentElement;
         }
-        if (e.target.closest('.remove-option')) {
-            e.target.closest('.option-row').remove();
+        return null;
+    }
+
+    function findOptionList(btn) {
+        var wrap = btn;
+        while (wrap && wrap !== document.body) {
+            if (wrap.classList && wrap.classList.contains('field-options-wrap')) break;
+            wrap = wrap.parentElement;
+        }
+        return wrap ? wrap.querySelector('.field-options-list') : null;
+    }
+
+    function findOptionRow(el) {
+        while (el && el !== document.body) {
+            if (el.classList && el.classList.contains('option-row')) return el;
+            el = el.parentElement;
+        }
+        return null;
+    }
+
+    // Add option row (for Select fields) - use delegation and parent walk for compatibility
+    document.addEventListener('click', function(e) {
+        var addBtn = findAddOptionButton(e.target);
+        if (addBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            var list = findOptionList(addBtn);
+            if (list) list.insertAdjacentHTML('beforeend', getOptionRowHtml());
+            return;
+        }
+        var el = e.target;
+        while (el && el !== document.body) {
+            if (el.classList && el.classList.contains('remove-option')) {
+                var row = findOptionRow(el);
+                if (row) row.remove();
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            el = el.parentElement;
         }
     });
 
@@ -148,6 +184,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 title: document.getElementById('formTitle').value,
                 description: document.getElementById('formDescription').value,
                 table_name: document.getElementById('tableName').value,
+                allowed_role_names: (function() {
+                    var checked = [];
+                    document.querySelectorAll('.allowed-role-cb:checked').forEach(function(cb) {
+                        if (cb.value) checked.push(cb.value);
+                    });
+                    return checked;
+                })(),
                 is_active: document.getElementById('isActive').checked,
                 allow_edit: document.getElementById('allowEdit').checked,
                 allow_delete: document.getElementById('allowDelete').checked,

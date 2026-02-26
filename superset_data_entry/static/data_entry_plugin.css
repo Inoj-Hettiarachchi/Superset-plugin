@@ -1,5 +1,30 @@
 /* Data Entry Plugin - UI enhancements */
 
+/* --- Home bar: injected by minimal_base.html JS - must always be visible --- */
+#data-entry-home-bar {
+    display: flex !important;
+    visibility: visible !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 50px !important;
+    z-index: 9999 !important;
+    background: #222 !important;
+    color: #fff !important;
+    align-items: center !important;
+    padding: 0 1rem !important;
+    box-sizing: border-box !important;
+}
+#data-entry-home-bar a {
+    color: #9d9d9d !important;
+    text-decoration: none !important;
+    font-size: 18px !important;
+}
+#data-entry-home-bar a:hover {
+    color: #fff !important;
+}
+
 /* --- Layout: use wrapper so CSS applies without depending on JS-added body class --- */
 /* body:has() applies when our template's wrapper is present (no JS required) */
 body:has(.data-entry-plugin-root),
@@ -7,6 +32,10 @@ body.data-entry-plugin-page {
     overflow-x: hidden;
     max-width: 100vw;
     padding-top: 56px;
+}
+/* When we have our home bar, ensure body has top padding so content is below it */
+body:has(#data-entry-home-bar) {
+    padding-top: 56px !important;
 }
 .data-entry-plugin-root .container-fluid,
 .data-entry-plugin-root .container,
@@ -30,6 +59,10 @@ body.data-entry-plugin-page .row > [class*="col-"] {
     padding-left: 0.5rem;
     padding-right: 0.5rem;
 }
+/* When our home bar is present, hide the default navbar to avoid duplicate bar */
+body:has(#data-entry-home-bar) .navbar {
+    display: none !important;
+}
 body:has(.data-entry-plugin-root) .navbar,
 body.data-entry-plugin-page .navbar {
     border: none;
@@ -51,8 +84,13 @@ body.data-entry-plugin-page .navbar .container {
 }
 
 /* --- Simplify navbar: show only Home (on plugin pages) --- */
-.navbar .navbar-header {
+/* Hide Superset's default navbar header only when it's NOT our minimal nav (our Home lives in .navbar-header) */
+.navbar:not(.data-entry-nav-minimal) .navbar-header {
     display: none !important;
+}
+/* Ensure our minimal nav's header (with Home link) is visible */
+.navbar.data-entry-nav-minimal .navbar-header {
+    display: block !important;
 }
 /* Hide right-side menu first (user / admin dropdown) so it doesn't get the Home rule */
 .navbar .navbar-nav.navbar-right,
@@ -105,6 +143,9 @@ body.data-entry-plugin-page .navbar .container {
 }
 
 /* Form list page header */
+.data-entry-breadcrumb { margin-bottom: 0.5rem; }
+.data-entry-breadcrumb a { color: #0d6efd; text-decoration: none; }
+.data-entry-breadcrumb a:hover { text-decoration: underline; }
 .data-entry-page-title {
     margin-bottom: 0.25rem;
 }

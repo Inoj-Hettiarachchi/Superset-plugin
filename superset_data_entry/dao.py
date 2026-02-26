@@ -8,8 +8,29 @@ from datetime import datetime
 import logging
 
 from .models import FormConfiguration, FormField
+from .form_access import _user_role_names, _normalize_role_set
 
 logger = logging.getLogger(__name__)
+
+
+def _role_names_for_username_from_db(session: Session, username: str) -> List[str]:
+    """Load role names for a user from FAB tables (ab_user, ab_user_role, ab_role). Fallback when user.roles is not populated."""
+    if not username:
+        return []
+    try:
+        result = session.execute(
+            text("""
+                SELECT ar.name FROM ab_role ar
+                INNER JOIN ab_user_role aur ON aur.role_id = ar.id
+                INNER JOIN ab_user au ON au.id = aur.user_id
+                WHERE au.username = :username
+            """),
+            {"username": username},
+        )
+        return [row[0] for row in result if row[0]]
+    except Exception as e:
+        logger.debug("Could not load roles from DB for user %s: %s", username, e)
+        return []
 
 
 class FormConfigDAO:
@@ -22,10 +43,36 @@ class FormConfigDAO:
     
     @staticmethod
     def get_all_active(session: Session) -> List[FormConfiguration]:
-        """Get all active form configurations"""
+        """Get all active form configurations (no user filter)."""
         return session.query(FormConfiguration).filter(
             FormConfiguration.is_active == True
         ).order_by(FormConfiguration.title).all()
+
+    @staticmethod
+    def get_all_active_for_user(session: Session, user) -> List[FormConfiguration]:
+        """
+        Get active forms the user can access: owner or has a role in allowed_role_names.
+        """
+        if not user:
+            return []
+        forms = session.query(FormConfiguration).filter(
+            FormConfiguration.is_active == True
+        ).order_by(FormConfiguration.title).all()
+        username = getattr(user, "username", None)
+        role_names = _user_role_names(user)
+        if not role_names and username:
+            role_names = _role_names_for_username_from_db(session, username)
+        user_roles = _normalize_role_set(role_names)
+        out = []
+        for f in forms:
+            if f.created_by == username:
+                out.append(f)
+                continue
+            allowed = f.allowed_role_names or []
+            form_allowed = _normalize_role_set(allowed)
+            if user_roles & form_allowed:
+                out.append(f)
+        return out
     
     @staticmethod
     def get_by_id(session: Session, form_id: int) -> Optional[FormConfiguration]:
@@ -53,6 +100,7 @@ class FormConfigDAO:
             allow_edit=data.get('allow_edit', True),
             allow_delete=data.get('allow_delete', False),
             created_by=created_by,
+            allowed_role_names=data.get('allowed_role_names') or [],
         )
         
         session.add(form)
@@ -72,16 +120,17 @@ class FormConfigDAO:
     
     @staticmethod
     def update(session: Session, form_id: int, data: dict) -> Optional[FormConfiguration]:
-        """Update form configuration"""
+        """Update form configuration (including allowed_role_names)."""
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return None
-        
-        # Update form fields
+        # Always persist allowed_role_names when present in payload
+        if 'allowed_role_names' in data:
+            val = data['allowed_role_names']
+            form.allowed_role_names = list(val) if isinstance(val, (list, tuple)) else ([] if val is None else [])
         for key in ['title', 'description', 'is_active', 'allow_edit', 'allow_delete']:
             if key in data:
                 setattr(form, key, data[key])
-        
         form.updated_at = datetime.utcnow()
         session.commit()
         return form

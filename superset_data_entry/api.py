@@ -1,8 +1,11 @@
 """
 REST API endpoints for data entry plugin
 Provides form management and data entry operations
+
+Access is controlled by FAB/Superset permissions (same as views).
 """
-from flask import Blueprint, request, jsonify, g
+from functools import wraps
+from flask import Blueprint, request, jsonify, g, current_app
 from flask_appbuilder.security.decorators import has_access
 from sqlalchemy.orm import sessionmaker
 import logging
@@ -10,6 +13,12 @@ import logging
 from .dao import FormConfigDAO, FormFieldDAO, DataEntryDAO
 from .validation import ValidationEngine
 from .table_manager import TableManager
+from .form_access import user_can_enter_data_for_form, user_can_configure_form
+from .views import (
+    can_configure_forms,
+    can_access_form_list_and_submit,
+    can_access_grid,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +28,39 @@ data_entry_api_bp = Blueprint('data_entry_api', __name__)
 
 def get_db_session():
     """Get database session and shared engine from Flask app context"""
-    from flask import current_app
     engine = current_app.config['DATA_ENTRY_ENGINE']
     Session = sessionmaker(bind=engine)
     return Session(), engine
 
 
-def is_admin(user):
-    """Check if user has admin role"""
-    return any(role.name == 'Admin' for role in user.roles)
+def require_can_configure_forms(f):
+    """Decorator: require can_configure_forms (3) or return 403."""
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not can_configure_forms():
+            return jsonify({'error': 'Access denied'}), 403
+        return f(*args, **kwargs)
+    return wrapped
+
+
+def require_can_list_and_submit(f):
+    """Decorator: require can_manage_data or can_entry_only (4 or 5) or return 403."""
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not can_access_form_list_and_submit():
+            return jsonify({'error': 'Access denied'}), 403
+        return f(*args, **kwargs)
+    return wrapped
+
+
+def require_can_manage_data(f):
+    """Decorator: require can_manage_data (4) or return 403."""
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not can_access_grid():
+            return jsonify({'error': 'Access denied'}), 403
+        return f(*args, **kwargs)
+    return wrapped
 
 
 # =============================================================================
@@ -36,6 +69,7 @@ def is_admin(user):
 
 @data_entry_api_bp.route('/forms', methods=['GET'])
 @has_access
+@require_can_list_and_submit
 def list_forms():
     """
     List all active forms
@@ -46,7 +80,7 @@ def list_forms():
     session = None
     try:
         session, engine = get_db_session()
-        forms = FormConfigDAO.get_all_active(session)
+        forms = FormConfigDAO.get_all_active_for_user(session, g.user)
         return jsonify([f.to_dict() for f in forms])
     except Exception as e:
         logger.error(f"Error listing forms: {e}")
@@ -58,6 +92,7 @@ def list_forms():
 
 @data_entry_api_bp.route('/forms/<int:form_id>', methods=['GET'])
 @has_access
+@require_can_list_and_submit
 def get_form(form_id):
     """
     Get form configuration with fields
@@ -75,6 +110,8 @@ def get_form(form_id):
         
         if not form:
             return jsonify({'error': 'Form not found'}), 404
+        if not user_can_enter_data_for_form(g.user, form, engine):
+            return jsonify({'error': 'Form not found'}), 404
         
         return jsonify(form.to_dict(include_fields=True))
     except Exception as e:
@@ -87,10 +124,11 @@ def get_form(form_id):
 
 @data_entry_api_bp.route('/forms', methods=['POST'])
 @has_access
+@require_can_configure_forms
 def create_form():
     """
-    Create new form configuration (Admin only)
-    
+    Create new form configuration (requires Data Entry Form Builder permission)
+
     Request body:
         {
             "name": "vessel_shift_config",
@@ -105,10 +143,6 @@ def create_form():
     """
     session = None
     try:
-        # Check admin permission
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         data = request.json
         
         # Validate required fields
@@ -145,9 +179,10 @@ def create_form():
 
 @data_entry_api_bp.route('/forms/<int:form_id>', methods=['PUT'])
 @has_access
+@require_can_configure_forms
 def update_form(form_id):
     """
-    Update form configuration (Admin only)
+    Update form configuration (requires Data Entry Form Builder + owner)
     
     Args:
         form_id: Form ID
@@ -157,11 +192,13 @@ def update_form(form_id):
     """
     session = None
     try:
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         data = request.json
         session, engine = get_db_session()
+        form = FormConfigDAO.get_by_id(session, form_id)
+        if not form:
+            return jsonify({'error': 'Form not found'}), 404
+        if not user_can_configure_form(g.user, form):
+            return jsonify({'error': 'Only the form owner can update this form'}), 403
         
         form = FormConfigDAO.update(session, form_id, data)
         if not form:
@@ -179,10 +216,11 @@ def update_form(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>', methods=['DELETE'])
 @has_access
+@require_can_configure_forms
 def delete_form(form_id):
     """
-    Delete form configuration (Admin only)
-    Does NOT delete the data table
+    Delete form configuration (requires Data Entry Form Builder + owner).
+    Does NOT delete the data table.
     
     Args:
         form_id: Form ID
@@ -192,10 +230,12 @@ def delete_form(form_id):
     """
     session = None
     try:
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         session, engine = get_db_session()
+        form = FormConfigDAO.get_by_id(session, form_id)
+        if not form:
+            return jsonify({'error': 'Form not found'}), 404
+        if not user_can_configure_form(g.user, form):
+            return jsonify({'error': 'Only the form owner can delete this form'}), 403
         
         success = FormConfigDAO.delete(session, form_id)
         if not success:
@@ -217,9 +257,10 @@ def delete_form(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/fields', methods=['POST'])
 @has_access
+@require_can_configure_forms
 def add_field(form_id):
     """
-    Add field to form (Admin only)
+    Add field to form (requires Data Entry Form Builder + owner)
     
     Args:
         form_id: Form ID
@@ -229,16 +270,13 @@ def add_field(form_id):
     """
     session = None
     try:
-        if not is_admin(g.user):
-            return jsonify({'error': 'Admin access required'}), 403
-        
         data = request.json
         session, engine = get_db_session()
-        
-        # Verify form exists
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
+        if not user_can_configure_form(g.user, form):
+            return jsonify({'error': 'Only the form owner can add fields'}), 403
         
         # Create field
         field = FormFieldDAO.create(session, form_id, data)
@@ -266,6 +304,7 @@ def add_field(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries', methods=['GET'])
 @has_access
+@require_can_manage_data
 def list_entries(form_id):
     """
     List data entries for a form
@@ -283,6 +322,8 @@ def list_entries(form_id):
         
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
+            return jsonify({'error': 'Form not found'}), 404
+        if not user_can_enter_data_for_form(g.user, form, engine):
             return jsonify({'error': 'Form not found'}), 404
         
         page = request.args.get('page', 1, type=int)
@@ -308,6 +349,7 @@ def list_entries(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries', methods=['POST'])
 @has_access
+@require_can_list_and_submit
 def submit_entry(form_id):
     """
     Submit new data entry
@@ -328,6 +370,8 @@ def submit_entry(form_id):
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form or not form.is_active:
             return jsonify({'error': 'Form not found or inactive'}), 404
+        if not user_can_enter_data_for_form(g.user, form, engine):
+            return jsonify({'error': 'Access denied to this form'}), 403
         
         data = request.json
         
@@ -355,6 +399,7 @@ def submit_entry(form_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries/<int:record_id>', methods=['PUT'])
 @has_access
+@require_can_manage_data
 def update_entry(form_id, record_id):
     """
     Update existing data entry
@@ -373,6 +418,8 @@ def update_entry(form_id, record_id):
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
+        if not user_can_enter_data_for_form(g.user, form, engine):
+            return jsonify({'error': 'Access denied to this form'}), 403
         
         if not form.allow_edit:
             return jsonify({'error': 'Editing not allowed for this form'}), 403
@@ -405,6 +452,7 @@ def update_entry(form_id, record_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/entries/<int:record_id>', methods=['DELETE'])
 @has_access
+@require_can_manage_data
 def delete_entry(form_id, record_id):
     """
     Delete data entry
@@ -423,6 +471,8 @@ def delete_entry(form_id, record_id):
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
+        if not user_can_enter_data_for_form(g.user, form, engine):
+            return jsonify({'error': 'Access denied to this form'}), 403
         
         if not form.allow_delete:
             return jsonify({'error': 'Deletion not allowed for this form'}), 403
@@ -452,6 +502,7 @@ def delete_entry(form_id, record_id):
 
 @data_entry_api_bp.route('/forms/<int:form_id>/validate', methods=['POST'])
 @has_access
+@require_can_list_and_submit
 def validate_data(form_id):
     """
     Validate data without saving
@@ -472,6 +523,8 @@ def validate_data(form_id):
         form = FormConfigDAO.get_by_id(session, form_id)
         if not form:
             return jsonify({'error': 'Form not found'}), 404
+        if not user_can_enter_data_for_form(g.user, form, engine):
+            return jsonify({'error': 'Access denied to this form'}), 403
         
         data = request.json
         

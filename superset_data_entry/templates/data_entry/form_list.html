@@ -1,9 +1,10 @@
 {% extends "data_entry/minimal_base.html" %}
 
 {% block content %}
-<link rel="stylesheet" href="/data-entry-plugin/static/data_entry_plugin.css">
+<link rel="stylesheet" href="/data-entry-plugin/static/data_entry_plugin.css?v={{ data_entry_plugin_version|default('1.0.0') }}">
 <div class="data-entry-plugin-root">
 <div class="container-fluid">
+    <p class="data-entry-breadcrumb mb-2"><a href="/">Home</a></p>
     <div class="row">
         <div class="col-12">
             <div class="data-entry-header-row">
@@ -13,7 +14,7 @@
                     </h2>
                     <p class="data-entry-page-subtitle">Choose a form to enter or view data.</p>
                 </div>
-                {% if is_admin %}
+                {% if can_create_form %}
                 <div>
                     <a href="/data-entry/builder/" class="btn btn-primary">
                         <i class="fa fa-plus"></i> Create New Form
@@ -35,10 +36,12 @@
                                 <a href="/data-entry/entry/{{ form.id }}" class="btn btn-success btn-sm">
                                     <i class="fa fa-edit"></i> Enter Data
                                 </a>
+                                {% if can_view_data %}
                                 <a href="/data-entry/data/{{ form.id }}" class="btn btn-info btn-sm">
                                     <i class="fa fa-table"></i> View Data
                                 </a>
-                                {% if is_admin %}
+                                {% endif %}
+                                {% if current_username and form.created_by == current_username %}
                                 <a href="/data-entry/builder/{{ form.id }}" class="btn btn-secondary btn-sm">
                                     <i class="fa fa-cog"></i> Configure
                                 </a>
@@ -59,7 +62,7 @@
             <div class="data-entry-empty-state">
                 <i class="fa fa-wpforms"></i>
                 <p class="mb-0">No forms available yet.</p>
-                {% if is_admin %}
+                {% if can_create_form %}
                 <a href="/data-entry/builder/" class="btn btn-primary">
                     <i class="fa fa-plus"></i> Create your first form
                 </a>
