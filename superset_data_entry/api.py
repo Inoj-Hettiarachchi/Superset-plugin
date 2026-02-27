@@ -152,12 +152,11 @@ def create_form():
         
         session, engine = get_db_session()
         
-        # Check if form with same name exists
-        existing = FormConfigDAO.get_by_name(session, data['name'])
-        if existing:
-            return jsonify({'error': f'Form with name {data["name"]} already exists'}), 409
-        
-        # Create form
+        # Ensure table_name is unique (forms tracked by id; name may be duplicated)
+        data = dict(data)
+        data['table_name'] = FormConfigDAO.ensure_unique_table_name(
+            session, data.get('table_name') or data.get('name', 'form')
+        )
         form = FormConfigDAO.create(session, data, created_by=g.user.username)
         
         # Create table if auto_create_table is True

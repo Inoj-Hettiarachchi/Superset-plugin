@@ -241,11 +241,16 @@ class FormBuilderView(BaseView):
                     session.delete(field)
                 session.commit()
             else:
-                # Create new form – ensure allowed_role_names is a list
+                # Create new form – ensure allowed_role_names is a list and table_name is unique
                 allowed = data.get('allowed_role_names')
                 if allowed is not None and not isinstance(allowed, list):
                     data = dict(data)
                     data['allowed_role_names'] = list(allowed) if allowed else []
+                else:
+                    data = dict(data)
+                data['table_name'] = FormConfigDAO.ensure_unique_table_name(
+                    session, data.get('table_name') or (data.get('name') or 'form').replace(' ', '_')
+                )
                 form = FormConfigDAO.create(session, data, created_by=g.user.username)
                 message = "Form created successfully"
             

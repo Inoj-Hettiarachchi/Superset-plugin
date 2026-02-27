@@ -83,11 +83,35 @@ class FormConfigDAO:
     
     @staticmethod
     def get_by_name(session: Session, name: str) -> Optional[FormConfiguration]:
-        """Get form configuration by name"""
+        """Get form configuration by name (may be multiple; returns first)."""
         return session.query(FormConfiguration).filter(
             FormConfiguration.name == name
         ).first()
-    
+
+    @staticmethod
+    def get_existing_table_names(session: Session) -> set:
+        """Return set of table_name values already used by form configurations."""
+        rows = session.query(FormConfiguration.table_name).all()
+        return {r[0] for r in rows}
+
+    @staticmethod
+    def ensure_unique_table_name(session: Session, base_name: str) -> str:
+        """
+        Return a table_name that is unique among form_configurations.
+        Uses base_name, then base_name_2, base_name_3, ... as needed.
+        """
+        import re
+        existing = FormConfigDAO.get_existing_table_names(session)
+        base_name = (base_name or "form").strip() or "form"
+        # Sanitize to valid identifier
+        base_name = re.sub(r'[^\w]', '_', base_name)[:90]
+        if base_name not in existing:
+            return base_name
+        suffix = 2
+        while f"{base_name}_{suffix}" in existing:
+            suffix += 1
+        return f"{base_name}_{suffix}"
+
     @staticmethod
     def create(session: Session, data: dict, created_by: str) -> FormConfiguration:
         """Create new form configuration"""

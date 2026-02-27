@@ -186,6 +186,18 @@ class SupersetDataEntryPlugin:
                     AND column_name = 'allowed_role_names'
                 """))
                 run_needed = r.scalar() == 0
+        if not run_needed and count >= 2:
+            # Check if old unique-on-name constraint still exists (V9: allow duplicate names)
+            with engine.connect() as conn:
+                r = conn.execute(text("""
+                    SELECT 1 FROM pg_constraint c
+                    JOIN pg_class t ON t.oid = c.conrelid
+                    JOIN pg_namespace n ON n.oid = t.relnamespace
+                    WHERE n.nspname = 'public' AND t.relname = 'form_configurations'
+                    AND c.conname = 'form_configurations_name_key'
+                    LIMIT 1
+                """))
+                run_needed = r.fetchone() is not None
         if run_needed:
             from .migrations_runner import run_migrations
             logger.info("Plugin migrations needed; running...")

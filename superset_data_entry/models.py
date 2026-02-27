@@ -15,10 +15,10 @@ class FormConfiguration(Model):
     __tablename__ = 'form_configurations'
     
     id = Column(Integer, primary_key=True)
-    name = Column(String(100), unique=True, nullable=False)
+    name = Column(String(100), nullable=False)  # display name; need not be unique; form tracked by id
     title = Column(String(255), nullable=False)
     description = Column(Text)
-    table_name = Column(String(100), nullable=False)
+    table_name = Column(String(100), unique=True, nullable=False)  # physical table; must be unique
     is_active = Column(Boolean, default=True)
     allow_edit = Column(Boolean, default=True)
     allow_delete = Column(Boolean, default=False)
