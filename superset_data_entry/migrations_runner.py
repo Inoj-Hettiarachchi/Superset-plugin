@@ -49,6 +49,37 @@ def _strip_sql_comments(segment: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _split_sql_statements(sql: str):
+    """
+    Split SQL into statements by ';', but do not split on semicolons inside
+    dollar-quoted strings ($$ ... $$). This allows DO $$ ... END $$; blocks.
+    """
+    statements = []
+    current = []
+    in_dollar = False
+    i = 0
+    n = len(sql)
+    while i < n:
+        if sql[i : i + 2] == "$$":
+            current.append("$$")
+            i += 2
+            in_dollar = not in_dollar
+            continue
+        if not in_dollar and sql[i] == ";":
+            stmt = "".join(current).strip()
+            if stmt:
+                statements.append(stmt)
+            current = []
+            i += 1
+            continue
+        current.append(sql[i])
+        i += 1
+    stmt = "".join(current).strip()
+    if stmt:
+        statements.append(stmt)
+    return statements
+
+
 def run_migrations(engine):
     """
     Run V6, V7, and V8 migrations. Safe to call multiple times (SQL uses IF NOT EXISTS).
@@ -56,10 +87,8 @@ def run_migrations(engine):
     for filename in MIGRATION_FILES:
         try:
             sql = _read_migration_sql(filename)
-            # Split by semicolon; strip comments from each segment, then run non-empty statements.
-            # (Previously we skipped any segment that started with "--", which dropped CREATE TABLEs
-            # that had leading comment lines in the same segment.)
-            segments = [s.strip() for s in sql.split(";") if s.strip()]
+            # Split by semicolon, but not inside dollar-quoted $$ ... $$ (e.g. DO blocks).
+            segments = _split_sql_statements(sql)
             statements = []
             for seg in segments:
                 stmt = _strip_sql_comments(seg)
