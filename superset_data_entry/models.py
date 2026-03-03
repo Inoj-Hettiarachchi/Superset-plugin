@@ -5,7 +5,12 @@ from flask_appbuilder import Model
 from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, TIMESTAMP
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def _utcnow():
+    """Return current UTC time as a naive datetime (compatible with TIMESTAMP columns)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class FormConfiguration(Model):
@@ -15,18 +20,18 @@ class FormConfiguration(Model):
     __tablename__ = 'form_configurations'
     
     id = Column(Integer, primary_key=True)
-    name = Column(String(100), unique=True, nullable=False)
+    name = Column(String(100), nullable=False)  # display name; need not be unique; form tracked by id
     title = Column(String(255), nullable=False)
     description = Column(Text)
-    table_name = Column(String(100), nullable=False)
+    table_name = Column(String(100), unique=True, nullable=False)  # physical table; must be unique
     is_active = Column(Boolean, default=True)
     allow_edit = Column(Boolean, default=True)
     allow_delete = Column(Boolean, default=False)
     created_by = Column(String(255))
     allowed_role_names = Column(JSONB, nullable=True)  # list of role names who can enter data
-    created_at = Column(TIMESTAMP, default=datetime.utcnow)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+    created_at = Column(TIMESTAMP, default=_utcnow)
+    updated_at = Column(TIMESTAMP, default=_utcnow, onupdate=_utcnow)
+
     # Relationships
     fields = relationship(
         'FormField',
@@ -79,9 +84,9 @@ class FormField(Model):
     help_text = Column(Text)
     validation_rules = Column(JSONB)
     options = Column(JSONB)
-    created_at = Column(TIMESTAMP, default=datetime.utcnow)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+    created_at = Column(TIMESTAMP, default=_utcnow)
+    updated_at = Column(TIMESTAMP, default=_utcnow, onupdate=_utcnow)
+
     # Relationships
     form = relationship('FormConfiguration', back_populates='fields')
     

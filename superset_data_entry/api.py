@@ -83,8 +83,8 @@ def list_forms():
         forms = FormConfigDAO.get_all_active_for_user(session, g.user)
         return jsonify([f.to_dict() for f in forms])
     except Exception as e:
-        logger.error(f"Error listing forms: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error listing forms: {e}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
     finally:
         if session:
             session.close()
@@ -115,8 +115,8 @@ def get_form(form_id):
         
         return jsonify(form.to_dict(include_fields=True))
     except Exception as e:
-        logger.error(f"Error getting form {form_id}: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error getting form {form_id}: {e}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
     finally:
         if session:
             session.close()
@@ -152,12 +152,11 @@ def create_form():
         
         session, engine = get_db_session()
         
-        # Check if form with same name exists
-        existing = FormConfigDAO.get_by_name(session, data['name'])
-        if existing:
-            return jsonify({'error': f'Form with name {data["name"]} already exists'}), 409
-        
-        # Create form
+        # Ensure table_name is unique (forms tracked by id; name may be duplicated)
+        data = dict(data)
+        data['table_name'] = FormConfigDAO.ensure_unique_table_name(
+            session, data.get('table_name') or data.get('name', 'form')
+        )
         form = FormConfigDAO.create(session, data, created_by=g.user.username)
         
         # Create table if auto_create_table is True
@@ -170,8 +169,8 @@ def create_form():
         return jsonify(form.to_dict(include_fields=True)), 201
         
     except Exception as e:
-        logger.error(f"Error creating form: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error creating form: {e}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
     finally:
         if session:
             session.close()
@@ -207,8 +206,8 @@ def update_form(form_id):
         return jsonify(form.to_dict(include_fields=True))
         
     except Exception as e:
-        logger.error(f"Error updating form {form_id}: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error updating form {form_id}: {e}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
     finally:
         if session:
             session.close()
@@ -244,8 +243,8 @@ def delete_form(form_id):
         return jsonify({'success': True, 'message': 'Form deleted'})
         
     except Exception as e:
-        logger.error(f"Error deleting form {form_id}: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error deleting form {form_id}: {e}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
     finally:
         if session:
             session.close()
@@ -291,8 +290,8 @@ def add_field(form_id):
         return jsonify(field.to_dict()), 201
         
     except Exception as e:
-        logger.error(f"Error adding field to form {form_id}: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error adding field to form {form_id}: {e}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
     finally:
         if session:
             session.close()
@@ -340,8 +339,8 @@ def list_entries(form_id):
         })
         
     except Exception as e:
-        logger.error(f"Error listing entries for form {form_id}: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error listing entries for form {form_id}: {e}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
     finally:
         if session:
             session.close()
@@ -390,8 +389,8 @@ def submit_entry(form_id):
         }), 201
         
     except Exception as e:
-        logger.error(f"Error submitting entry for form {form_id}: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error submitting entry for form {form_id}: {e}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
     finally:
         if session:
             session.close()
@@ -443,8 +442,8 @@ def update_entry(form_id, record_id):
         })
         
     except Exception as e:
-        logger.error(f"Error updating entry {record_id} for form {form_id}: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error updating entry {record_id} for form {form_id}: {e}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
     finally:
         if session:
             session.close()
@@ -489,8 +488,8 @@ def delete_entry(form_id, record_id):
         })
         
     except Exception as e:
-        logger.error(f"Error deleting entry {record_id} for form {form_id}: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error deleting entry {record_id} for form {form_id}: {e}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
     finally:
         if session:
             session.close()
@@ -537,8 +536,8 @@ def validate_data(form_id):
         })
         
     except Exception as e:
-        logger.error(f"Error validating data for form {form_id}: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error validating data for form {form_id}: {e}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
     finally:
         if session:
             session.close()

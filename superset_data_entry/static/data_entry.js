@@ -50,14 +50,17 @@ document.addEventListener('DOMContentLoaded', function() {
         
         fetch('/data-entry/entry/' + formId + '/submit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': DataEntryUtils.getCsrfToken()
+            },
             body: JSON.stringify(formData)
         })
         .then(function(response) { return response.json(); })
         .then(function(data) {
             resetSubmitBtn();
             if (data.success) {
-                alert(data.message);
+                DataEntryUtils.showToast(data.message, 'success');
                 formEl.reset();
             } else if (data.errors) {
                 for (var fieldName in data.errors) {
@@ -68,14 +71,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         inputField.classList.add('is-invalid');
                     }
                 }
-                alert('Please fix the validation errors');
+                DataEntryUtils.showToast('Please fix the validation errors above.', 'warning');
             } else {
-                alert('Error: ' + (data.error || 'Unknown error'));
+                DataEntryUtils.showToast('Error: ' + (data.error || 'Unknown error'), 'danger');
             }
         })
         .catch(function(error) {
             resetSubmitBtn();
-            alert('Error: ' + error);
+            DataEntryUtils.showToast('Network error: ' + error, 'danger');
         });
     });
 });
