@@ -68,7 +68,13 @@
                                     </td>
                                     {% endfor %}
                                     <td>{{ record.created_by or '-' }}</td>
-                                    <td>{{ record.created_at.strftime('%Y-%m-%d %H:%M') if record.created_at else '-' }}</td>
+                                    <td>
+                                        {%- set ts = record.created_at -%}
+                                        {%- if not ts -%}-
+                                        {%- elif ts is string -%}{{ ts[:16] | replace('T', ' ') }}
+                                        {%- else -%}{{ ts.strftime('%Y-%m-%d %H:%M') }}
+                                        {%- endif -%}
+                                    </td>
                                     {% if form_config.allow_delete %}
                                     <td>
                                         <button class="btn btn-danger btn-sm delete-record-btn" data-record-id="{{ record.id }}">

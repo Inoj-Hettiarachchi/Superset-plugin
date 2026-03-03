@@ -7,6 +7,8 @@ import hashlib
 import json
 import logging
 
+from .utils import pg_ident
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,45 +48,41 @@ class TableManager:
             ValueError: If table already exists
         """
         table_name = form_config.table_name
-        
+        tn = pg_ident(table_name)
+
         # Check if table already exists
         if cls.table_exists(table_name, engine):
             raise ValueError(f"Table {table_name} already exists")
-        
+
         # Build CREATE TABLE statement
         columns = []
         columns.append("id SERIAL PRIMARY KEY")
-        
+
         # Add columns for each form field
         for field in sorted(form_config.fields, key=lambda f: f.field_order):
             column_def = cls._field_to_column_def(field)
             columns.append(column_def)
-        
+
         # Add audit columns
         columns.append("created_by VARCHAR(255)")
         columns.append("created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
         columns.append("updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-        
-        create_sql = f"""
-            CREATE TABLE {table_name} (
-                {', '.join(columns)}
-            );
-        """
-        
-        # Create indexes
-        index_sql = f"""
-            CREATE INDEX idx_{table_name}_created_at ON {table_name}(created_at DESC);
-        """
-        
+
+        create_sql = f"CREATE TABLE {tn} ({', '.join(columns)});"
+
+        # Create index
+        idx_ident = pg_ident(f"idx_{table_name}_created_at")
+        index_sql = f"CREATE INDEX {idx_ident} ON {tn}(created_at DESC);"
+
         # Execute table creation
         try:
             with engine.begin() as conn:
                 conn.execute(text(create_sql))
                 conn.execute(text(index_sql))
-            
+
             logger.info(f"✅ Created table: {table_name}")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to create table {table_name}: {e}")
             raise
@@ -102,21 +100,31 @@ class TableManager:
         """
         # Get PostgreSQL type
         pg_type = cls.FIELD_TYPE_MAPPING.get(field.field_type, 'VARCHAR(255)')
-        
+
         # Nullable constraint
         nullable = "NOT NULL" if field.is_required else "NULL"
-        
-        # Default value
+
+        # Default value — escape carefully to prevent injection in DDL
         default = ""
         if field.default_value:
             if field.field_type in ['text', 'textarea', 'select']:
-                default = f"DEFAULT '{field.default_value}'"
+                # Escape single quotes by doubling them (standard SQL)
+                escaped = field.default_value.replace("'", "''")
+                default = f"DEFAULT '{escaped}'"
             elif field.field_type in ['boolean', 'checkbox']:
-                default = f"DEFAULT {field.default_value.upper()}"
+                val = field.default_value.strip().upper()
+                if val not in ('TRUE', 'FALSE'):
+                    val = 'FALSE'
+                default = f"DEFAULT {val}"
             elif field.field_type in ['number', 'integer', 'decimal']:
-                default = f"DEFAULT {field.default_value}"
-        
-        return f"{field.field_name} {pg_type} {nullable} {default}".strip()
+                try:
+                    float(field.default_value)  # validate it is numeric
+                    default = f"DEFAULT {field.default_value}"
+                except ValueError:
+                    pass  # skip an invalid numeric default
+
+        col_ident = pg_ident(field.field_name)
+        return f"{col_ident} {pg_type} {nullable} {default}".strip()
     
     @classmethod
     def table_exists(cls, table_name: str, engine) -> bool:
@@ -169,40 +177,49 @@ class TableManager:
             bool: True if successful
         """
         table_name = form_config.table_name
-        
+
         # If table doesn't exist, create it
         if not cls.table_exists(table_name, engine):
             logger.info(f"Table {table_name} doesn't exist, creating...")
             return cls.create_table_from_config(form_config, engine)
-        
+
         # Get existing columns
         existing_columns = cls.get_table_columns(table_name, engine)
-        
+
         # Find new fields that need to be added
         new_fields = [
             f for f in form_config.fields
             if f.field_name not in existing_columns
         ]
-        
+
         if not new_fields:
             logger.info(f"✅ No schema changes needed for {table_name}")
             return True
-        
-        # Add new columns
+
+        # Add new columns — wrap each ALTER in its own SAVEPOINT so a
+        # single failure doesn't abort the whole transaction block.
+        tn = pg_ident(table_name)
         try:
             with engine.begin() as conn:
                 for field in new_fields:
                     column_def = cls._field_to_column_def(field)
-                    alter_sql = f"ALTER TABLE {table_name} ADD COLUMN {column_def};"
-                    
+                    alter_sql = f"ALTER TABLE {tn} ADD COLUMN {column_def};"
+                    sp = f"sp_add_{field.field_name}"
                     try:
+                        conn.execute(text(f"SAVEPOINT {sp}"))
                         conn.execute(text(alter_sql))
-                        logger.info(f"✅ Added column {field.field_name} to {table_name}")
+                        conn.execute(text(f"RELEASE SAVEPOINT {sp}"))
+                        logger.info(
+                            f"✅ Added column {field.field_name} to {table_name}"
+                        )
                     except ProgrammingError as e:
-                        logger.warning(f"⚠️  Failed to add column {field.field_name}: {e}")
-            
+                        conn.execute(text(f"ROLLBACK TO SAVEPOINT {sp}"))
+                        logger.warning(
+                            f"⚠️  Skipped column {field.field_name} ({e})"
+                        )
+
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Schema migration failed for {table_name}: {e}")
             raise
@@ -245,12 +262,13 @@ class TableManager:
             engine: SQLAlchemy engine
         """
         try:
+            tn = pg_ident(table_name)
             with engine.begin() as conn:
-                conn.execute(text(f"DROP TABLE IF EXISTS {table_name} CASCADE;"))
-            
+                conn.execute(text(f"DROP TABLE IF EXISTS {tn} CASCADE;"))
+
             logger.warning(f"⚠️  Dropped table: {table_name}")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to drop table {table_name}: {e}")
             raise

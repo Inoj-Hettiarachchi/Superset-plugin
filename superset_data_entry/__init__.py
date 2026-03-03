@@ -38,7 +38,7 @@ class SupersetDataEntryPlugin:
             self._setup_database()
             self._register_views()
             self._register_api()
-            self._health_check()
+            self._run_startup_checks()
             logger.info("✅ Data Entry Plugin loaded successfully")
         except Exception as e:
             logger.error(f"❌ Plugin initialization failed: {e}")
@@ -73,7 +73,8 @@ class SupersetDataEntryPlugin:
             static_folder=STATIC_FOLDER,
             static_url_path='/static'
         )
-        self.app.register_blueprint(static_bp, url_prefix='/data-entry-plugin')
+        if 'data_entry_static' not in self.app.blueprints:
+            self.app.register_blueprint(static_bp, url_prefix='/data-entry-plugin')
         logger.info(f"✅ Plugin static files registered at: /data-entry-plugin/static/")
     
     def _setup_database(self):
@@ -83,18 +84,10 @@ class SupersetDataEntryPlugin:
         """
         try:
             from sqlalchemy import create_engine
-            # Verify import succeeded
-            if create_engine is None:
-                raise ImportError("create_engine is None after import. SQLAlchemy may be corrupted.")
         except ImportError as e:
             raise ImportError(
                 f"SQLAlchemy not available: {e}. "
                 "Ensure SQLAlchemy is installed in Superset's environment."
-            )
-        except NameError as e:
-            raise ImportError(
-                f"Failed to import create_engine from sqlalchemy: {e}. "
-                "This may indicate a SQLAlchemy version compatibility issue."
             )
 
         # Get Superset's database URI
@@ -106,8 +99,15 @@ class SupersetDataEntryPlugin:
         # Store URI and create a shared engine (engines are heavyweight and manage
         # connection pools -- they must be created once, not per-request)
         self.app.config['DATA_ENTRY_DB_URI'] = uri
-        self.app.config['DATA_ENTRY_ENGINE'] = create_engine(uri, pool_pre_ping=True)
-        
+        self.app.config['DATA_ENTRY_ENGINE'] = create_engine(
+            uri,
+            pool_pre_ping=True,   # verify connections before use
+            pool_size=5,          # keep up to 5 persistent connections
+            max_overflow=10,      # allow up to 10 extra connections under load
+            pool_timeout=30,      # wait up to 30 s for a connection from the pool
+            pool_recycle=1800,    # recycle connections after 30 min
+        )
+
         logger.info("✅ Plugin connected to Superset's database")
     
     def _register_views(self):
@@ -206,16 +206,15 @@ class SupersetDataEntryPlugin:
         else:
             logger.info("✅ Plugin database tables found")
     
-    def _health_check(self):
+    def _run_startup_checks(self):
         """
-        Verify plugin is working correctly
-        Checks database connectivity and table existence
+        Run startup checks: verify DB connectivity and apply any pending migrations.
         """
         try:
             engine = self.app.config['DATA_ENTRY_ENGINE']
             self._run_migrations_if_needed()
         except Exception as e:
-            logger.error(f"❌ Plugin health check failed: {e}")
+            logger.error(f"❌ Plugin startup checks failed: {e}")
             raise
 
 

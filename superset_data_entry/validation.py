@@ -216,13 +216,8 @@ class ValidationEngine:
             return errors  # No validation if no options defined
         
         valid_values = [opt.get('value') for opt in options if 'value' in opt]
-        
+
         if value not in valid_values:
             errors.append(f"{label} must be one of the available options")
-        
+
         return errors
-
-
-# Register default custom validators for Sebastian AS use case
-ValidationEngine.register_validator('validate_shift_duration', lambda v: 1 <= float(v) <= 24)
-ValidationEngine.register_validator('validate_grace_period', lambda v: 0 <= int(v) <= 60)

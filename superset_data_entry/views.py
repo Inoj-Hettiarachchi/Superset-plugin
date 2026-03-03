@@ -11,7 +11,7 @@ Having any of these = has access to the plugin (1). None = no access (2).
 from flask_appbuilder import BaseView, expose, has_access
 from flask import render_template, request, jsonify, flash, redirect, url_for, Response, current_app
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime
+from datetime import datetime, timezone
 import csv
 import io
 import json
@@ -235,11 +235,13 @@ class FormBuilderView(BaseView):
                     update_data['allowed_role_names'] = list(update_data['allowed_role_names']) if update_data['allowed_role_names'] else []
                 form = FormConfigDAO.update(session, form_id, update_data)
                 message = "Form updated successfully"
-                # Delete existing fields and recreate (simple approach)
+                # Diff-and-patch: update existing fields, add new ones, remove deleted ones
                 form = FormConfigDAO.get_by_id(session, form_id)
-                for field in form.fields:
-                    session.delete(field)
-                session.commit()
+                incoming_ids = {int(f['id']) for f in fields_data if f.get('id')}
+                for existing_field in list(form.fields):
+                    if existing_field.id not in incoming_ids:
+                        session.delete(existing_field)
+                session.flush()
             else:
                 # Create new form – ensure allowed_role_names is a list and table_name is unique
                 allowed = data.get('allowed_role_names')
@@ -257,8 +259,12 @@ class FormBuilderView(BaseView):
             # Create/update fields
             if fields_data:
                 for field_data in fields_data:
-                    field_data['form_id'] = form.id
-                    FormFieldDAO.create(session, form.id, field_data)
+                    fid = field_data.get('id')
+                    if fid:  # existing field — update in-place
+                        FormFieldDAO.update(session, int(fid), field_data)
+                    else:    # new field — create
+                        field_data['form_id'] = form.id
+                        FormFieldDAO.create(session, form.id, field_data)
                 message += f" with {len(fields_data)} field(s)"
             
             # Auto-create or migrate table
@@ -286,10 +292,8 @@ class FormBuilderView(BaseView):
             })
             
         except Exception as e:
-            logger.error(f"Error saving form: {e}")
-            import traceback
-            traceback.print_exc()
-            return jsonify({'error': str(e)}), 500
+            logger.error(f"Error saving form: {e}", exc_info=True)
+            return jsonify({'error': 'An internal server error occurred'}), 500
         finally:
             if session:
                 session.close()
@@ -379,8 +383,8 @@ class DataEntryView(BaseView):
             })
             
         except Exception as e:
-            logger.error(f"Error submitting data: {e}")
-            return jsonify({'error': str(e)}), 500
+            logger.error(f"Error submitting data: {e}", exc_info=True)
+            return jsonify({'error': 'An internal server error occurred'}), 500
         finally:
             if session:
                 session.close()
@@ -539,7 +543,7 @@ class DataGridView(BaseView):
             # Header: ID, then form fields (by label), then Created By, Created At
             fields_sorted = sorted(form_config.fields, key=lambda x: x.field_order)
             field_names = [f.field_name for f in fields_sorted]
-            headers = ["ID"] + [f.field_label for f in fields_sorted] + ["Created By", "Created At", "Location ID"]
+            headers = ["ID"] + [f.field_label for f in fields_sorted] + ["Created By", "Created At"]
             writer.writerow(headers)
 
             for rec in records:
@@ -548,7 +552,6 @@ class DataGridView(BaseView):
                     row.append(cell_value(rec.get(fn)))
                 row.append(cell_value(rec.get("created_by")))
                 row.append(cell_value(rec.get("created_at")))
-                row.append(cell_value(rec.get("location_id")))
                 writer.writerow(row)
 
             safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in form_config.name)
@@ -601,8 +604,8 @@ class DataGridView(BaseView):
             })
             
         except Exception as e:
-            logger.error(f"Error deleting record: {e}")
-            return jsonify({'error': str(e)}), 500
+            logger.error(f"Error deleting record: {e}", exc_info=True)
+            return jsonify({'error': 'An internal server error occurred'}), 500
         finally:
             if session:
                 session.close()

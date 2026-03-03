@@ -85,7 +85,8 @@
                             </div>
                             <div class="col-md-4">
                                 <div class="form-check">
-                                    <input type="checkbox" class="form-check-input" id="allowDelete">
+                                    <input type="checkbox" class="form-check-input" id="allowDelete"
+                                           {{ 'checked' if form_config and form_config.allow_delete else '' }}>
                                     <label class="form-check-label" for="allowDelete">Allow deleting records</label>
                                 </div>
                             </div>
@@ -120,10 +121,15 @@
                                             <label>Type *</label>
                                             <select class="form-control form-control-sm field-type" required>
                                                 <option value="text" {{ 'selected' if field.field_type == 'text' else '' }}>Text</option>
+                                                <option value="textarea" {{ 'selected' if field.field_type == 'textarea' else '' }}>Textarea</option>
+                                                <option value="number" {{ 'selected' if field.field_type == 'number' else '' }}>Number</option>
                                                 <option value="integer" {{ 'selected' if field.field_type == 'integer' else '' }}>Integer</option>
                                                 <option value="decimal" {{ 'selected' if field.field_type == 'decimal' else '' }}>Decimal</option>
                                                 <option value="date" {{ 'selected' if field.field_type == 'date' else '' }}>Date</option>
+                                                <option value="datetime" {{ 'selected' if field.field_type == 'datetime' else '' }}>Date &amp; Time</option>
+                                                <option value="time" {{ 'selected' if field.field_type == 'time' else '' }}>Time</option>
                                                 <option value="boolean" {{ 'selected' if field.field_type == 'boolean' else '' }}>Boolean</option>
+                                                <option value="checkbox" {{ 'selected' if field.field_type == 'checkbox' else '' }}>Checkbox</option>
                                                 <option value="select" {{ 'selected' if field.field_type == 'select' else '' }}>Select</option>
                                             </select>
                                         </div>

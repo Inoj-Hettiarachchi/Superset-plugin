@@ -4,8 +4,10 @@ Data Access Objects for form configurations and dynamic data operations
 from sqlalchemy import text, create_engine
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
+
+from .utils import pg_ident
 
 from .models import FormConfiguration, FormField
 from .form_access import _user_role_names, _normalize_role_set
@@ -155,7 +157,7 @@ class FormConfigDAO:
         for key in ['title', 'description', 'is_active', 'allow_edit', 'allow_delete']:
             if key in data:
                 setattr(form, key, data[key])
-        form.updated_at = datetime.utcnow()
+        form.updated_at = datetime.now(timezone.utc)
         session.commit()
         return form
     
@@ -212,8 +214,8 @@ class FormFieldDAO:
         for key, value in data.items():
             if hasattr(field, key):
                 setattr(field, key, value)
-        
-        field.updated_at = datetime.utcnow()
+
+        field.updated_at = datetime.now(timezone.utc)
         session.commit()
         return field
     
@@ -241,22 +243,21 @@ class DataEntryDAO:
             Tuple of (records, total_count)
         """
         offset = (page - 1) * per_page
-        
+        tn = pg_ident(table_name)
+
         with engine.connect() as conn:
             # Get total count
-            count_query = text(f"SELECT COUNT(*) FROM {table_name}")
+            count_query = text(f"SELECT COUNT(*) FROM {tn}")
             total = conn.execute(count_query).scalar()
-            
+
             # Get paginated records
-            query = text(f"""
-                SELECT * FROM {table_name}
-                ORDER BY created_at DESC
-                LIMIT :limit OFFSET :offset
-            """)
-            
+            query = text(
+                f"SELECT * FROM {tn} ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+            )
+
             result = conn.execute(query, {'limit': per_page, 'offset': offset})
             records = [dict(row._mapping) for row in result]
-            
+
             return records, total
 
     @staticmethod
@@ -265,23 +266,20 @@ class DataEntryDAO:
         Get all records from a data table for export/seed (no pagination).
         Limited to max_records to avoid excessive memory use.
         """
+        tn = pg_ident(table_name)
         with engine.connect() as conn:
-            query = text(f"""
-                SELECT * FROM {table_name}
-                ORDER BY id ASC
-                LIMIT :limit
-            """)
+            query = text(f"SELECT * FROM {tn} ORDER BY id ASC LIMIT :limit")
             result = conn.execute(query, {'limit': max_records})
             return [dict(row._mapping) for row in result]
     
     @staticmethod
     def get_by_id(engine, table_name: str, record_id: int) -> Optional[Dict]:
         """Get a single record by ID"""
+        tn = pg_ident(table_name)
         with engine.connect() as conn:
-            query = text(f"SELECT * FROM {table_name} WHERE id = :id")
+            query = text(f"SELECT * FROM {tn} WHERE id = :id")
             result = conn.execute(query, {'id': record_id})
             row = result.first()
-            
             return dict(row._mapping) if row else None
     
     @staticmethod
@@ -292,21 +290,21 @@ class DataEntryDAO:
         Returns:
             ID of newly created record
         """
-        # Add audit fields
+        # Copy data to avoid mutating the caller's dict, then add audit fields
+        data = dict(data)
         data['created_by'] = username
-        data['created_at'] = datetime.utcnow()
-        data['updated_at'] = datetime.utcnow()
-        
-        # Build INSERT query
-        columns = ', '.join(data.keys())
-        placeholders = ', '.join(f':{key}' for key in data.keys())
-        
-        query = text(f"""
-            INSERT INTO {table_name} ({columns})
-            VALUES ({placeholders})
-            RETURNING id
-        """)
-        
+        data['created_at'] = datetime.now(timezone.utc)
+        data['updated_at'] = datetime.now(timezone.utc)
+
+        # Build INSERT query with properly quoted identifiers
+        tn = pg_ident(table_name)
+        columns = ', '.join(pg_ident(k) for k in data.keys())
+        placeholders = ', '.join(f':{k}' for k in data.keys())
+
+        query = text(
+            f"INSERT INTO {tn} ({columns}) VALUES ({placeholders}) RETURNING id"
+        )
+
         with engine.begin() as conn:
             result = conn.execute(query, data)
             return result.fetchone()[0]
@@ -314,20 +312,17 @@ class DataEntryDAO:
     @staticmethod
     def update(engine, table_name: str, record_id: int, data: Dict[str, Any], username: str) -> bool:
         """Update existing record"""
-        # Add audit fields
-        data['updated_at'] = datetime.utcnow()
-        
-        # Build UPDATE query
-        set_clause = ', '.join(f"{key} = :{key}" for key in data.keys())
-        
-        query = text(f"""
-            UPDATE {table_name}
-            SET {set_clause}
-            WHERE id = :record_id
-        """)
-        
+        # Copy data to avoid mutating the caller's dict, then add audit fields
+        data = dict(data)
+        data['updated_at'] = datetime.now(timezone.utc)
+
+        # Build UPDATE query with properly quoted identifiers
+        tn = pg_ident(table_name)
+        set_clause = ', '.join(f"{pg_ident(k)} = :{k}" for k in data.keys())
+
+        query = text(f"UPDATE {tn} SET {set_clause} WHERE id = :record_id")
         data['record_id'] = record_id
-        
+
         with engine.begin() as conn:
             result = conn.execute(query, data)
             return result.rowcount > 0
@@ -335,8 +330,9 @@ class DataEntryDAO:
     @staticmethod
     def delete(engine, table_name: str, record_id: int) -> bool:
         """Delete record"""
-        query = text(f"DELETE FROM {table_name} WHERE id = :id")
-        
+        tn = pg_ident(table_name)
+        query = text(f"DELETE FROM {tn} WHERE id = :id")
+
         with engine.begin() as conn:
             result = conn.execute(query, {'id': record_id})
             return result.rowcount > 0
@@ -354,31 +350,30 @@ class DataEntryDAO:
         """
         offset = (page - 1) * per_page
         
-        # Build WHERE clause
+        # Build WHERE clause with properly quoted column identifiers
+        tn = pg_ident(table_name)
         where_conditions = []
-        params = {'limit': per_page, 'offset': offset}
-        
+        params: Dict[str, Any] = {'limit': per_page, 'offset': offset}
+
         for idx, (column, value) in enumerate(filters.items()):
             param_name = f'filter_{idx}'
-            where_conditions.append(f"{column} = :{param_name}")
+            where_conditions.append(f"{pg_ident(column)} = :{param_name}")
             params[param_name] = value
-        
+
         where_clause = ' AND '.join(where_conditions) if where_conditions else '1=1'
-        
+
         with engine.connect() as conn:
             # Get total count
-            count_query = text(f"SELECT COUNT(*) FROM {table_name} WHERE {where_clause}")
+            count_query = text(f"SELECT COUNT(*) FROM {tn} WHERE {where_clause}")
             total = conn.execute(count_query, params).scalar()
-            
+
             # Get records
-            query = text(f"""
-                SELECT * FROM {table_name}
-                WHERE {where_clause}
-                ORDER BY created_at DESC
-                LIMIT :limit OFFSET :offset
-            """)
-            
+            query = text(
+                f"SELECT * FROM {tn} WHERE {where_clause} "
+                f"ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+            )
+
             result = conn.execute(query, params)
             records = [dict(row._mapping) for row in result]
-            
+
             return records, total

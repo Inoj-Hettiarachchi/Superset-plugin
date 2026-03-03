@@ -25,10 +25,15 @@ document.addEventListener('DOMContentLoaded', function() {
                             '<label>Type *</label>' +
                             '<select class="form-control form-control-sm field-type">' +
                                 '<option value="text">Text</option>' +
+                                '<option value="textarea">Textarea</option>' +
+                                '<option value="number">Number</option>' +
                                 '<option value="integer">Integer</option>' +
                                 '<option value="decimal">Decimal</option>' +
                                 '<option value="date">Date</option>' +
+                                '<option value="datetime">Date &amp; Time</option>' +
+                                '<option value="time">Time</option>' +
                                 '<option value="boolean">Boolean</option>' +
+                                '<option value="checkbox">Checkbox</option>' +
                                 '<option value="select">Select</option>' +
                             '</select>' +
                         '</div>' +
@@ -128,9 +133,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Remove field
     document.addEventListener('click', function(e) {
         if (e.target.closest('.remove-field')) {
-            if (confirm('Are you sure you want to remove this field?')) {
-                e.target.closest('.field-card').remove();
-            }
+            var card = e.target.closest('.field-card');
+            DataEntryUtils.confirmAction(
+                'Are you sure you want to remove this field?',
+                function() { if (card) { card.remove(); } },
+                'Remove',
+                'btn-danger'
+            );
         }
     });
 
@@ -200,7 +209,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             fetch('/data-entry/builder/save', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': DataEntryUtils.getCsrfToken()
+                },
                 body: JSON.stringify(formData)
             })
             .then(function(response) { return response.json(); })
@@ -211,10 +223,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     submitBtn.innerHTML = originalHtml;
                 }
                 if (data.success) {
-                    alert(data.message);
+                    DataEntryUtils.showToast(data.message, 'success');
                     window.location.href = '/data-entry/forms/list/';
                 } else {
-                    alert('Error: ' + (data.error || 'Unknown error'));
+                    DataEntryUtils.showToast('Error: ' + (data.error || 'Unknown error'), 'danger');
                 }
             })
             .catch(function(error) {
@@ -223,7 +235,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = originalHtml;
                 }
-                alert('Error: ' + error);
+                DataEntryUtils.showToast('Network error: ' + error, 'danger');
             });
         });
     }
