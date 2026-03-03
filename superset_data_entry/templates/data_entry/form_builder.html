@@ -146,7 +146,7 @@
                                             </button>
                                         </div>
                                     </div>
-                                    <div class="field-options-wrap mt-2" style="{{ 'display:block' if field.field_type == 'select' else 'display:none' }}">
+                                    <div class="field-options-wrap mt-2" {% if field.field_type == 'select' %}style="display:block"{% else %}style="display:none"{% endif %}>
                                         <label class="small text-muted">Select options (value shown in dropdown)</label>
                                         <div class="field-options-list">
                                             {% if field.field_type == 'select' and field.options %}
