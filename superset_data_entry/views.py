@@ -186,10 +186,14 @@ class FormBuilderView(BaseView):
             if not session:
                 session, engine = get_db_session()
             available_roles = get_available_role_names(engine)
+            # Eagerly snapshot the role list into a plain Python set so Jinja2
+            # never needs to touch the SQLAlchemy JSONB attribute while rendering.
+            selected_roles = set(form_config.allowed_role_names or []) if form_config else set()
             return self.render_template(
                 'data_entry/form_builder.html',
                 form_config=form_config,
                 available_roles=available_roles,
+                selected_roles=selected_roles,
             )
         except Exception as e:
             logger.error(f"Error loading form builder: {e}")

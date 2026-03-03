@@ -58,7 +58,7 @@
                                 {% for role in available_roles or [] %}
                                 <div class="form-check">
                                     <input type="checkbox" class="form-check-input allowed-role-cb" id="role-{{ role }}" value="{{ role }}"
-                                           {{ 'checked' if form_config and form_config.allowed_role_names and role in form_config.allowed_role_names else '' }}>
+                                           {{ 'checked' if role in selected_roles else '' }}>
                                     <label class="form-check-label" for="role-{{ role }}">{{ role }}</label>
                                 </div>
                                 {% endfor %}
