@@ -35,6 +35,8 @@ setup(
         'Flask-AppBuilder>=4.0.0',
         'SQLAlchemy>=1.4.0',
         'psycopg2-binary>=2.9.0',
+        'msal>=1.20.0',
+        'requests>=2.28.0',
     ],
     python_requires='>=3.8',
     classifiers=[

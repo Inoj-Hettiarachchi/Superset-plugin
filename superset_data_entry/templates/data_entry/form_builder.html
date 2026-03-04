@@ -179,6 +179,89 @@
                     </div>
                 </div>
                 
+                <div class="card data-entry-section-card">
+                    <div class="card-header">
+                        <i class="fa fa-cloud-upload"></i> SharePoint Integration
+                        <span class="text-muted small ml-2">Optional – automatically save submissions to a SharePoint folder</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-check mb-3">
+                            <input type="checkbox" class="form-check-input" id="sharepointEnabled"
+                                   {{ 'checked' if form_config and form_config.sharepoint_enabled else '' }}>
+                            <label class="form-check-label" for="sharepointEnabled">
+                                <strong>Enable SharePoint export</strong>
+                                <small class="text-muted d-block">
+                                    When enabled, each new submission is appended as a row to
+                                    <code>{{ form_config.name if form_config else '{form_name}' }}.csv</code>
+                                    in the configured folder.
+                                </small>
+                            </label>
+                        </div>
+
+                        <div id="sharepointFields" {% if not (form_config and form_config.sharepoint_enabled) %}style="display:none"{% endif %}>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="sharepointSiteUrl">SharePoint Site URL</label>
+                                        <input type="url" class="form-control" id="sharepointSiteUrl"
+                                               value="{{ form_config.sharepoint_site_url if form_config and form_config.sharepoint_site_url else '' }}"
+                                               placeholder="https://contoso.sharepoint.com/sites/MySite">
+                                        <small class="form-text text-muted">Full URL of the SharePoint site.</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="sharepointFolderPath">Folder Path</label>
+                                        <input type="text" class="form-control" id="sharepointFolderPath"
+                                               value="{{ form_config.sharepoint_folder_path if form_config and form_config.sharepoint_folder_path else '' }}"
+                                               placeholder="Shared Documents/DataEntry">
+                                        <small class="form-text text-muted">Relative path inside the site's default document library.</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label for="sharepointTenantId">Azure Tenant ID</label>
+                                        <input type="text" class="form-control" id="sharepointTenantId"
+                                               value="{{ form_config.sharepoint_tenant_id if form_config and form_config.sharepoint_tenant_id else '' }}"
+                                               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label for="sharepointClientId">Azure App Client ID</label>
+                                        <input type="text" class="form-control" id="sharepointClientId"
+                                               value="{{ form_config.sharepoint_client_id if form_config and form_config.sharepoint_client_id else '' }}"
+                                               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label for="sharepointClientSecret">Client Secret</label>
+                                        <input type="password" class="form-control" id="sharepointClientSecret"
+                                               placeholder="{{ '••••••••  (leave blank to keep existing)' if form_config and form_config.sharepoint_secret_set else 'Paste secret here' }}">
+                                        <small class="form-text text-muted">
+                                            {% if form_config and form_config.sharepoint_secret_set %}
+                                            A secret is already saved. Leave blank to keep it unchanged.
+                                            {% else %}
+                                            Client secret from your Azure App Registration.
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="alert alert-info py-2 mb-0">
+                                <i class="fa fa-info-circle"></i>
+                                The Azure App Registration needs the
+                                <strong>Files.ReadWrite.All</strong> or
+                                <strong>Sites.ReadWrite.All</strong>
+                                <em>application</em> permission granted by a tenant admin.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="data-entry-form-actions">
                     <button type="submit" class="btn btn-primary" id="formBuilderSubmitBtn">
                         <i class="fa fa-save"></i> Save Form

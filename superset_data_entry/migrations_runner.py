@@ -13,7 +13,11 @@ from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
-_VERSION_RE = re.compile(r'^V(\d+)__.*\.sql$')
+# Migration files must be named  DE_V<number>__<description>.sql
+# The "DE_" prefix (Data Entry) namespaces plugin migrations so they can never
+# clash with the host project's own migration files (Flyway, Liquibase, Alembic,
+# etc.) even if both use a V<n>__ naming convention.
+_VERSION_RE = re.compile(r'^DE_V(\d+)__.*\.sql$')
 
 
 def _discover_migration_files() -> list:

@@ -32,6 +32,15 @@ class FormConfiguration(Model):
     created_at = Column(TIMESTAMP, default=_utcnow)
     updated_at = Column(TIMESTAMP, default=_utcnow, onupdate=_utcnow)
 
+    # SharePoint export (optional)
+    sharepoint_enabled = Column(Boolean, default=False, nullable=False)
+    sharepoint_tenant_id = Column(Text, nullable=True)
+    sharepoint_client_id = Column(Text, nullable=True)
+    sharepoint_client_secret = Column(Text, nullable=True)  # stored as plain text; treat as sensitive
+    sharepoint_site_url = Column(Text, nullable=True)
+    sharepoint_folder_path = Column(Text, nullable=True)
+    sharepoint_last_uploaded_at = Column(TIMESTAMP, nullable=True)  # watermark for incremental uploads
+
     # Relationships
     fields = relationship(
         'FormField',
@@ -58,6 +67,14 @@ class FormConfiguration(Model):
             'allowed_role_names': self.allowed_role_names if self.allowed_role_names is not None else [],
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            # SharePoint export config (secret is intentionally omitted from serialisation)
+            'sharepoint_enabled': self.sharepoint_enabled or False,
+            'sharepoint_tenant_id': self.sharepoint_tenant_id,
+            'sharepoint_client_id': self.sharepoint_client_id,
+            'sharepoint_site_url': self.sharepoint_site_url,
+            'sharepoint_folder_path': self.sharepoint_folder_path,
+            'sharepoint_secret_set': bool(self.sharepoint_client_secret),
+            'sharepoint_last_uploaded_at': self.sharepoint_last_uploaded_at.isoformat() if self.sharepoint_last_uploaded_at else None,
         }
         
         if include_fields:

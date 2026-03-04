@@ -127,6 +127,13 @@ class FormConfigDAO:
             allow_delete=data.get('allow_delete', False),
             created_by=created_by,
             allowed_role_names=data.get('allowed_role_names') or [],
+            # SharePoint export (optional)
+            sharepoint_enabled=data.get('sharepoint_enabled', False) or False,
+            sharepoint_tenant_id=data.get('sharepoint_tenant_id') or None,
+            sharepoint_client_id=data.get('sharepoint_client_id') or None,
+            sharepoint_client_secret=data.get('sharepoint_client_secret') or None,
+            sharepoint_site_url=data.get('sharepoint_site_url') or None,
+            sharepoint_folder_path=data.get('sharepoint_folder_path') or None,
         )
         
         session.add(form)
@@ -154,9 +161,17 @@ class FormConfigDAO:
         if 'allowed_role_names' in data:
             val = data['allowed_role_names']
             form.allowed_role_names = list(val) if isinstance(val, (list, tuple)) else ([] if val is None else [])
-        for key in ['title', 'description', 'is_active', 'allow_edit', 'allow_delete']:
+        for key in ['title', 'description', 'is_active', 'allow_edit', 'allow_delete',
+                    'sharepoint_enabled', 'sharepoint_tenant_id', 'sharepoint_client_id',
+                    'sharepoint_site_url', 'sharepoint_folder_path']:
             if key in data:
-                setattr(form, key, data[key])
+                setattr(form, key, data[key] or None if key not in ('sharepoint_enabled',) else data[key])
+        # sharepoint_last_uploaded_at is a datetime/None — pass through as-is (no or-None transform)
+        if 'sharepoint_last_uploaded_at' in data:
+            form.sharepoint_last_uploaded_at = data['sharepoint_last_uploaded_at']
+        # Only overwrite the client secret if the caller sends a non-empty value
+        if data.get('sharepoint_client_secret'):
+            form.sharepoint_client_secret = data['sharepoint_client_secret']
         form.updated_at = datetime.now(timezone.utc)
         session.commit()
         return form
@@ -270,6 +285,20 @@ class DataEntryDAO:
         with engine.connect() as conn:
             query = text(f"SELECT * FROM {tn} ORDER BY id ASC LIMIT :limit")
             result = conn.execute(query, {'limit': max_records})
+            return [dict(row._mapping) for row in result]
+
+    @staticmethod
+    def get_rows_since(engine, table_name: str, since_dt, max_records: int = 50_000) -> List[Dict]:
+        """
+        Get all records with created_at strictly after since_dt, ordered oldest-first.
+        Used for incremental SharePoint uploads — only new rows since the last watermark.
+        """
+        tn = pg_ident(table_name)
+        with engine.connect() as conn:
+            query = text(
+                f"SELECT * FROM {tn} WHERE created_at > :since ORDER BY created_at ASC LIMIT :limit"
+            )
+            result = conn.execute(query, {'since': since_dt, 'limit': max_records})
             return [dict(row._mapping) for row in result]
     
     @staticmethod

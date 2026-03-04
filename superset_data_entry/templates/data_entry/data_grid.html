@@ -16,7 +16,7 @@
                 <i class="fa fa-table"></i> {{ form_config.title }} - Data
             </h2>
             
-            <div class="mb-3">
+            <div class="mb-3 d-flex flex-wrap align-items-center" style="gap:0.5rem;">
                 <a href="/data-entry/entry/{{ form_config.id }}" class="btn btn-success">
                     <i class="fa fa-plus"></i> Add New Entry
                 </a>
@@ -26,6 +26,36 @@
                 <a href="/data-entry/data/{{ form_config.id }}/csv" class="btn btn-info" download>
                     <i class="fa fa-file-text-o"></i> Download as CSV
                 </a>
+                {% if form_config.sharepoint_enabled %}
+                <button type="button" class="btn btn-primary" id="sharepointUploadBtn"
+                        data-form-id="{{ form_config.id }}">
+                    <i class="fa fa-cloud-upload"></i>
+                    {% if not form_config.sharepoint_last_uploaded_at %}
+                    Seed Upload to SharePoint
+                    {% else %}
+                    Upload New Entries to SharePoint
+                    {% endif %}
+                </button>
+                {% if is_admin and form_config.sharepoint_last_uploaded_at %}
+                <button type="button" class="btn btn-outline-warning btn-sm" id="spForceReuploadBtn"
+                        data-form-id="{{ form_config.id }}"
+                        title="Force re-upload all records (resets watermark)">
+                    <i class="fa fa-refresh"></i> Force Full Re-upload
+                </button>
+                {% endif %}
+                <span class="text-muted small" id="spLastUploadedBadge">
+                    <i class="fa fa-clock-o"></i>
+                    {% if form_config.sharepoint_last_uploaded_at %}
+                    Last uploaded:
+                    {%- set ts = form_config.sharepoint_last_uploaded_at -%}
+                    {%- if ts is string -%}{{ ts[:16] | replace('T', ' ') }}
+                    {%- else -%}{{ ts.strftime('%Y-%m-%d %H:%M') }}
+                    {%- endif %}
+                    {% else %}
+                    Never uploaded to SharePoint
+                    {% endif %}
+                </span>
+                {% endif %}
                 <a href="/data-entry/forms/list/" class="btn btn-secondary">
                     <i class="fa fa-arrow-left"></i> Back to Forms
                 </a>
@@ -45,7 +75,7 @@
                                     {% endfor %}
                                     <th>Created By</th>
                                     <th>Created At</th>
-                                    {% if form_config.allow_delete %}
+                                    {% if can_delete %}
                                     <th>Actions</th>
                                     {% endif %}
                                 </tr>
@@ -75,7 +105,7 @@
                                         {%- else -%}{{ ts.strftime('%Y-%m-%d %H:%M') }}
                                         {%- endif -%}
                                     </td>
-                                    {% if form_config.allow_delete %}
+                                    {% if can_delete %}
                                     <td>
                                         <button class="btn btn-danger btn-sm delete-record-btn" data-record-id="{{ record.id }}">
                                             <i class="fa fa-trash"></i>

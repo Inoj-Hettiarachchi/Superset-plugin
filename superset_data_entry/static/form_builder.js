@@ -143,6 +143,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // SharePoint enable toggle — show/hide credential fields
+    var spToggle = document.getElementById('sharepointEnabled');
+    var spFields = document.getElementById('sharepointFields');
+    if (spToggle && spFields) {
+        spToggle.addEventListener('change', function() {
+            spFields.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+
     // Save form with fields
     var formEl = document.getElementById('formBuilderForm');
     if (formEl) {
@@ -204,6 +213,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 allow_edit: document.getElementById('allowEdit').checked,
                 allow_delete: document.getElementById('allowDelete').checked,
                 auto_create_table: !document.getElementById('formId').value,
+                // SharePoint export
+                sharepoint_enabled: !!(document.getElementById('sharepointEnabled') && document.getElementById('sharepointEnabled').checked),
+                sharepoint_site_url: (document.getElementById('sharepointSiteUrl') || {}).value || null,
+                sharepoint_folder_path: (document.getElementById('sharepointFolderPath') || {}).value || null,
+                sharepoint_tenant_id: (document.getElementById('sharepointTenantId') || {}).value || null,
+                sharepoint_client_id: (document.getElementById('sharepointClientId') || {}).value || null,
+                sharepoint_client_secret: (document.getElementById('sharepointClientSecret') || {}).value || null,
                 fields: fields
             };
             

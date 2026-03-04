@@ -69,6 +69,23 @@ def has_plugin_access():
     return can_configure_forms() or can_manage_data() or can_entry_only()
 
 
+def is_superset_admin():
+    """True if the current user has the Superset 'Admin' role.
+
+    Uses role-name matching (portable across Superset versions) rather than
+    FAB's is_admin() which may not be available in all deployments.
+    """
+    try:
+        from flask import g
+        user = getattr(g, 'user', None)
+        if not user:
+            return False
+        roles = getattr(user, 'roles', None) or []
+        return any(getattr(r, 'name', '') == 'Admin' for r in roles)
+    except Exception:
+        return False
+
+
 def can_access_form_list_and_submit():
     """Can see form list and submit entries (4 or 5)."""
     return can_manage_data() or can_entry_only()
@@ -134,9 +151,10 @@ class FormListView(BaseView):
             return self.render_template(
                 'data_entry/form_list.html',
                 forms=forms,
-                can_create_form=can_configure_forms(),
-                can_view_data=can_access_grid(),
+                can_create_form=is_superset_admin(),
+                can_view_data=can_access_form_list_and_submit(),
                 current_username=g.user.username if g.user else None,
+                is_admin=is_superset_admin(),
             )
         except Exception as e:
             logger.error(f"Error loading form list: {e}")
@@ -160,17 +178,17 @@ class FormBuilderView(BaseView):
     method_permission_name = {"build": "configure_forms", "save": "configure_forms"}
 
     def is_accessible(self):
-        return can_configure_forms()
+        return is_superset_admin()
 
     @expose('/')
     @expose('/<int:form_id>')
     @has_access
     def build(self, form_id=None):
-        """Form builder interface"""
-        session = None
-        try:
-            from flask import g
-            form_config = None
+        """Form builder interface (Admin only)."""
+        from flask import g
+        if not is_superset_admin():
+            flash("Only administrators can create or configure forms.", "danger")
+            return redirect('/data-entry/forms/list/')
             
             if form_id:
                 session, engine = get_db_session()
@@ -206,9 +224,9 @@ class FormBuilderView(BaseView):
     @expose('/save', methods=['POST'])
     @has_access
     def save(self):
-        """Save form configuration with fields (requires can_configure_forms)."""
-        if not can_configure_forms():
-            return jsonify({'error': 'Access denied'}), 403
+        """Save form configuration with fields (Admin only)."""
+        if not is_superset_admin():
+            return jsonify({'error': 'Access denied. Only administrators can create or configure forms.'}), 403
         session = None
         try:
             from flask import g
@@ -234,6 +252,13 @@ class FormBuilderView(BaseView):
                     'allow_edit': data.get('allow_edit', True),
                     'allow_delete': data.get('allow_delete', False),
                     'allowed_role_names': data.get('allowed_role_names') if data.get('allowed_role_names') is not None else [],
+                    # SharePoint export config
+                    'sharepoint_enabled': data.get('sharepoint_enabled', False),
+                    'sharepoint_tenant_id': data.get('sharepoint_tenant_id') or None,
+                    'sharepoint_client_id': data.get('sharepoint_client_id') or None,
+                    'sharepoint_client_secret': data.get('sharepoint_client_secret') or None,
+                    'sharepoint_site_url': data.get('sharepoint_site_url') or None,
+                    'sharepoint_folder_path': data.get('sharepoint_folder_path') or None,
                 }
                 if not isinstance(update_data['allowed_role_names'], list):
                     update_data['allowed_role_names'] = list(update_data['allowed_role_names']) if update_data['allowed_role_names'] else []
@@ -377,9 +402,22 @@ class DataEntryView(BaseView):
             if errors:
                 return jsonify({'success': False, 'errors': errors}), 400
             
-            # Save
+            # Save to PostgreSQL
             record_id = DataEntryDAO.insert(engine, form_config.table_name, data, g.user.username)
-            
+
+            # Optionally export to SharePoint (non-blocking: a SharePoint error never
+            # prevents the submission from being recorded in the database)
+            if form_config.sharepoint_enabled:
+                try:
+                    from .sharepoint import SharePointExporter
+                    SharePointExporter().upload_row(form_config, data)
+                except Exception as sp_err:
+                    logger.error(
+                        "SharePoint export failed for form %s: %s",
+                        form_id, sp_err,
+                        exc_info=True,
+                    )
+
             return jsonify({
                 'success': True,
                 'record_id': record_id,
@@ -404,16 +442,20 @@ class DataGridView(BaseView):
     default_view = "grid"
     class_permission_name = DATA_ENTRY_VIEW
     base_permissions = [PERM_CONFIGURE_FORMS, PERM_MANAGE_DATA, PERM_ENTRY_ONLY]
-    method_permission_name = {"grid": "manage_data", "seed_download": "manage_data", "csv_download": "manage_data", "delete": "manage_data"}
+    method_permission_name = {"grid": "manage_data", "seed_download": "manage_data", "csv_download": "manage_data", "delete": "manage_data", "sharepoint_upload": "manage_data"}
 
     def is_accessible(self):
-        return can_access_grid()
+        # entry_only users can view data, download, and upload to SharePoint;
+        # manage_data users additionally can delete records.
+        return can_access_form_list_and_submit()
 
     @expose('/<int:form_id>')
-    @has_access
     def grid(self, form_id):
-        """Data grid view (requires can_manage_data)."""
-        if not can_access_grid():
+        """Data grid view (requires can_manage_data or can_entry_only)."""
+        r = _require_login()
+        if r is not None:
+            return r
+        if not can_access_form_list_and_submit():
             flash("You do not have permission to view data", "danger")
             return redirect("/data-entry/forms/list/")
         session = None
@@ -452,7 +494,9 @@ class DataGridView(BaseView):
                 page=page,
                 per_page=per_page,
                 total_pages=total_pages,
-                can_create_form=can_configure_forms()
+                can_create_form=can_configure_forms(),
+                can_delete=form_config.allow_delete and can_manage_data(),
+                is_admin=is_superset_admin(),
             )
             
         except Exception as e:
@@ -464,10 +508,12 @@ class DataGridView(BaseView):
                 session.close()
 
     @expose('/<int:form_id>/seed')
-    @has_access
     def seed_download(self, form_id):
-        """Download form data as a JSON seed file (requires can_manage_data)."""
-        if not can_access_grid():
+        """Download form data as a JSON seed file (requires can_manage_data or can_entry_only)."""
+        r = _require_login()
+        if r is not None:
+            return r
+        if not can_access_form_list_and_submit():
             flash("Access denied", "danger")
             return redirect(request.referrer or "/data-entry/forms/list/")
         session = None
@@ -514,10 +560,14 @@ class DataGridView(BaseView):
                 session.close()
 
     @expose('/<int:form_id>/csv')
-    @has_access
     def csv_download(self, form_id):
-        """Download form data as CSV (requires can_manage_data)."""
-        if not can_access_grid():
+        """Download form data as CSV (requires can_manage_data or can_entry_only)."""
+        r = _require_login()
+        if r is not None:
+            return r
+        if not can_access_form_list_and_submit():
+            flash("Access denied", "danger")
+            return redirect(request.referrer or "/data-entry/forms/list/")
             flash("Access denied", "danger")
             return redirect(request.referrer or "/data-entry/forms/list/")
         session = None
@@ -572,6 +622,64 @@ class DataGridView(BaseView):
             logger.error(f"Error generating CSV: {e}")
             flash(f"Error: {str(e)}", "danger")
             return redirect(request.referrer or '/data-entry/forms/list/')
+        finally:
+            if session:
+                session.close()
+
+    @expose('/<int:form_id>/sharepoint-upload', methods=['POST'])
+    def sharepoint_upload(self, form_id):
+        """Incremental (or seed) bulk upload to SharePoint.
+
+        Accessible to can_manage_data and can_entry_only users.
+        ``force=True`` in the JSON body triggers a full seed re-upload (admin only).
+        """
+        r = _require_login()
+        if r is not None:
+            return r
+        if not can_access_form_list_and_submit():
+            return jsonify({'error': 'Access denied'}), 403
+        session = None
+        try:
+            from flask import g
+            session, engine = get_db_session()
+            form_config = FormConfigDAO.get_by_id(session, form_id)
+            if not form_config:
+                return jsonify({'error': 'Form not found'}), 404
+            if not user_can_enter_data_for_form(g.user, form_config, engine):
+                return jsonify({'error': 'Access denied to this form'}), 403
+            if not form_config.sharepoint_enabled:
+                return jsonify({'error': 'SharePoint export is not enabled for this form'}), 400
+
+            body = request.json or {}
+            force = bool(body.get('force', False))
+
+            # Only administrators can force a full re-upload (reset the watermark)
+            if force and not is_superset_admin():
+                return jsonify({'error': 'Only administrators can force a full re-upload'}), 403
+
+            from .sharepoint import SharePointExporter
+            rows_uploaded, mode = SharePointExporter().upload_incremental(
+                form_config, engine, force=force
+            )
+
+            last_uploaded_at_str = None
+            if mode != 'no_new_rows':
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                FormConfigDAO.update(session, form_id, {'sharepoint_last_uploaded_at': now})
+                last_uploaded_at_str = now.isoformat()
+            elif form_config.sharepoint_last_uploaded_at:
+                last_uploaded_at_str = form_config.sharepoint_last_uploaded_at.isoformat()
+
+            return jsonify({
+                'success': True,
+                'rows_uploaded': rows_uploaded,
+                'mode': mode,
+                'last_uploaded_at': last_uploaded_at_str,
+            })
+
+        except Exception as e:
+            logger.error(f"Error uploading to SharePoint: {e}", exc_info=True)
+            return jsonify({'error': 'An internal server error occurred'}), 500
         finally:
             if session:
                 session.close()
