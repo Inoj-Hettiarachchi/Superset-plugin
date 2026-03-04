@@ -72,16 +72,11 @@ def has_plugin_access():
 def is_superset_admin():
     """True if the current user has the Superset 'Admin' role.
 
-    Uses role-name matching (portable across Superset versions) rather than
-    FAB's is_admin() which may not be available in all deployments.
+    Delegates to FAB's own SecurityManager so role lookups are handled
+    correctly regardless of whether roles are lazy-loaded or cached.
     """
     try:
-        from flask import g
-        user = getattr(g, 'user', None)
-        if not user:
-            return False
-        roles = getattr(user, 'roles', None) or []
-        return any(getattr(r, 'name', '') == 'Admin' for r in roles)
+        return _sm().current_user_is_admin()
     except Exception:
         return False
 
@@ -178,7 +173,9 @@ class FormBuilderView(BaseView):
     method_permission_name = {"build": "configure_forms", "save": "configure_forms"}
 
     def is_accessible(self):
-        return is_superset_admin()
+        # Admin users always have access; also allow anyone with can_configure_forms
+        # so the FAB permission system continues to work as a fallback.
+        return is_superset_admin() or can_configure_forms()
 
     @expose('/')
     @expose('/<int:form_id>')
@@ -189,18 +186,21 @@ class FormBuilderView(BaseView):
         if not is_superset_admin():
             flash("Only administrators can create or configure forms.", "danger")
             return redirect('/data-entry/forms/list/')
-            
+        session = None
+        try:
+            form_config = None
+
             if form_id:
                 session, engine = get_db_session()
                 form_config = FormConfigDAO.get_by_id(session, form_id)
-                
+
                 if not form_config:
                     flash("Form not found", "warning")
                     return redirect('/data-entry/forms/list/')
                 if not user_can_configure_form(g.user, form_config):
                     flash("Only the form owner can configure this form", "danger")
                     return redirect('/data-entry/forms/list/')
-            
+
             if not session:
                 session, engine = get_db_session()
             available_roles = get_available_role_names(engine)
