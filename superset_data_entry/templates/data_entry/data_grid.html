@@ -44,15 +44,14 @@
                 </button>
                 {% endif %}
                 <span class="text-muted small" id="spLastUploadedBadge">
-                    <i class="fa fa-clock-o"></i>
                     {% if form_config.sharepoint_last_uploaded_at %}
-                    Last uploaded:
+                    <i class="fa fa-clock-o"></i> Last uploaded to SharePoint:
                     {%- set ts = form_config.sharepoint_last_uploaded_at -%}
-                    {%- if ts is string -%}{{ ts[:16] | replace('T', ' ') }}
-                    {%- else -%}{{ ts.strftime('%Y-%m-%d %H:%M') }}
+                    {%- if ts is string -%}&nbsp;{{ ts[:16] | replace('T', ' ') }}
+                    {%- else -%}&nbsp;{{ ts.strftime('%Y-%m-%d %H:%M') }}
                     {%- endif %}
                     {% else %}
-                    Never uploaded to SharePoint
+                    <i class="fa fa-clock-o"></i> Never uploaded to SharePoint
                     {% endif %}
                 </span>
                 {% endif %}
