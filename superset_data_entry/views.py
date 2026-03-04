@@ -70,13 +70,30 @@ def has_plugin_access():
 
 
 def is_superset_admin():
-    """True if the current user has the Superset 'Admin' role.
+    """True if the current user has the configured FAB admin role (default: 'Admin').
 
-    Delegates to FAB's own SecurityManager so role lookups are handled
-    correctly regardless of whether roles are lazy-loaded or cached.
+    Uses sm.auth_role_admin to read the configured admin role name, then checks
+    the current user's roles via sm.get_user_roles() — avoids SQLAlchemy
+    lazy-load issues and works across all FAB/Superset versions.
     """
     try:
-        return _sm().current_user_is_admin()
+        from flask_login import current_user
+        sm = _sm()
+        # auth_role_admin is the configured admin role name, e.g. "Admin"
+        admin_role_name = sm.auth_role_admin
+        # Prefer flask_login's current_user (always populated in a request context)
+        user = current_user if (current_user and getattr(current_user, 'is_authenticated', False)) \
+            else getattr(__import__('flask').g, 'user', None)
+        if not user:
+            return False
+        try:
+            # sm.get_user_roles() is the official FAB way to fetch roles
+            user_roles = sm.get_user_roles(user) or []
+            return any(getattr(r, 'name', '') == admin_role_name for r in user_roles)
+        except Exception:
+            # Last-resort fallback: direct attribute access
+            roles = getattr(user, 'roles', None) or []
+            return any(getattr(r, 'name', '') == admin_role_name for r in roles)
     except Exception:
         return False
 
