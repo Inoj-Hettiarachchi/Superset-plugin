@@ -147,9 +147,16 @@ document.addEventListener('DOMContentLoaded', function() {
     var spToggle = document.getElementById('sharepointEnabled');
     var spFields = document.getElementById('sharepointFields');
     if (spToggle && spFields) {
-        spToggle.addEventListener('change', function() {
-            spFields.style.display = this.checked ? 'block' : 'none';
-        });
+        function updateSpFields() {
+            if (spToggle.checked) {
+                spFields.classList.remove('de-sp-hidden');
+            } else {
+                spFields.classList.add('de-sp-hidden');
+            }
+        }
+        spToggle.addEventListener('change', updateSpFields);
+        // Run immediately in case the checkbox is already checked on page load
+        updateSpFields();
     }
 
     // Save form with fields

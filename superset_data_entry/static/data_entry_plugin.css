@@ -1,5 +1,10 @@
 /* Data Entry Plugin - UI enhancements */
 
+/* SharePoint fields toggle — class-based so Superset CSP can't strip it */
+.de-sp-hidden {
+    display: none !important;
+}
+
 /* --- Home bar: injected by minimal_base.html JS - must always be visible --- */
 #data-entry-home-bar {
     display: flex !important;
