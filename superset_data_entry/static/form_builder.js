@@ -262,4 +262,53 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
+
+    // ------------------------------------------------------------------ //
+    // Test SharePoint Connection                                           //
+    // ------------------------------------------------------------------ //
+    var testSpBtn = document.getElementById('testSharepointBtn');
+    if (testSpBtn) {
+        testSpBtn.addEventListener('click', function() {
+            var resultSpan = document.getElementById('testSharepointResult');
+            var formIdEl = document.getElementById('formId');
+            var fid = formIdEl ? formIdEl.value : '';
+            if (!fid) {
+                if (resultSpan) resultSpan.textContent = 'Save the form first.';
+                return;
+            }
+            testSpBtn.disabled = true;
+            testSpBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Testing\u2026';
+            if (resultSpan) { resultSpan.textContent = ''; resultSpan.className = 'ml-2 small'; }
+
+            fetch('/data-entry/data/' + fid + '/test-sharepoint', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': DataEntryUtils.getCsrfToken()
+                }
+            })
+            .then(function(resp) { return resp.json(); })
+            .then(function(data) {
+                testSpBtn.disabled = false;
+                testSpBtn.innerHTML = '<i class="fa fa-plug"></i> Test Connection';
+                if (resultSpan) {
+                    if (data.success) {
+                        resultSpan.textContent = '\u2705 ' + (data.message || 'Connected');
+                        resultSpan.className = 'ml-2 small text-success';
+                    } else {
+                        resultSpan.textContent = '\u274c ' + (data.error || 'Failed');
+                        resultSpan.className = 'ml-2 small text-danger';
+                    }
+                }
+            })
+            .catch(function(err) {
+                testSpBtn.disabled = false;
+                testSpBtn.innerHTML = '<i class="fa fa-plug"></i> Test Connection';
+                if (resultSpan) {
+                    resultSpan.textContent = '\u274c Network error';
+                    resultSpan.className = 'ml-2 small text-danger';
+                }
+            });
+        });
+    }
 });

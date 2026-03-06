@@ -86,6 +86,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 'success'
             );
 
+            // Show truncation warning if present (e.g. "Exported 50,000 of 63,000 rows")
+            if (data.warning) {
+                DataEntryUtils.showToast('\u26a0\ufe0f ' + data.warning, 'warning');
+            }
+
             // Update the last-uploaded badge
             var badge = document.getElementById('spLastUploadedBadge');
             if (badge && data.last_uploaded_at) {

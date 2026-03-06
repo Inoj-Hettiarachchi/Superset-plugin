@@ -182,7 +182,7 @@
                 <div class="card data-entry-section-card">
                     <div class="card-header">
                         <i class="fa fa-cloud-upload"></i> SharePoint Integration
-                        <span class="text-muted small ml-2">Optional – automatically save submissions to a SharePoint folder</span>
+                        <span class="text-muted small ml-2">Optional – manually upload submissions to a SharePoint folder</span>
                     </div>
                     <div class="card-body">
                         <div class="form-check mb-3">
@@ -191,9 +191,9 @@
                             <label class="form-check-label" for="sharepointEnabled">
                                 <strong>Enable SharePoint export</strong>
                                 <small class="text-muted d-block">
-                                    When enabled, each new submission is appended as a row to
-                                    <code>{{ form_config.name if form_config else '{form_name}' }}.csv</code>
-                                    in the configured folder.
+                                    When enabled, users can manually upload all submissions as
+                                    <code>{{ form_config.table_name if form_config else '{table_name}' }}.csv</code>
+                                    to the configured SharePoint folder via the data grid.
                                 </small>
                             </label>
                         </div>
@@ -251,13 +251,19 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="alert alert-info py-2 mb-0">
+                            <div class="alert alert-info py-2 mb-2">
                                 <i class="fa fa-info-circle"></i>
                                 The Azure App Registration needs the
                                 <strong>Files.ReadWrite.All</strong> or
                                 <strong>Sites.ReadWrite.All</strong>
                                 <em>application</em> permission granted by a tenant admin.
                             </div>
+                            {% if form_config and form_config.id %}
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="testSharepointBtn">
+                                <i class="fa fa-plug"></i> Test Connection
+                            </button>
+                            <span id="testSharepointResult" class="ml-2 small"></span>
+                            {% endif %}
                         </div>
                     </div>
                 </div>

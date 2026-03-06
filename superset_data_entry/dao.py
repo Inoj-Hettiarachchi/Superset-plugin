@@ -131,7 +131,9 @@ class FormConfigDAO:
             sharepoint_enabled=data.get('sharepoint_enabled', False) or False,
             sharepoint_tenant_id=data.get('sharepoint_tenant_id') or None,
             sharepoint_client_id=data.get('sharepoint_client_id') or None,
-            sharepoint_client_secret=data.get('sharepoint_client_secret') or None,
+            sharepoint_client_secret=FormConfigDAO._encrypt_if_needed(
+                data.get('sharepoint_client_secret')
+            ),
             sharepoint_site_url=data.get('sharepoint_site_url') or None,
             sharepoint_folder_path=data.get('sharepoint_folder_path') or None,
         )
@@ -171,11 +173,24 @@ class FormConfigDAO:
             form.sharepoint_last_uploaded_at = data['sharepoint_last_uploaded_at']
         # Only overwrite the client secret if the caller sends a non-empty value
         if data.get('sharepoint_client_secret'):
-            form.sharepoint_client_secret = data['sharepoint_client_secret']
+            form.sharepoint_client_secret = FormConfigDAO._encrypt_if_needed(
+                data['sharepoint_client_secret']
+            )
         form.updated_at = datetime.now(timezone.utc)
         session.commit()
         return form
     
+    @staticmethod
+    def _encrypt_if_needed(secret: Optional[str]) -> Optional[str]:
+        """Encrypt a SharePoint client secret if Fernet is configured."""
+        if not secret:
+            return None
+        try:
+            from .sharepoint import encrypt_secret
+            return encrypt_secret(secret)
+        except Exception:
+            return secret
+
     @staticmethod
     def delete(session: Session, form_id: int) -> bool:
         """Delete form configuration"""
@@ -276,30 +291,50 @@ class DataEntryDAO:
             return records, total
 
     @staticmethod
-    def get_all_for_export(engine, table_name: str, max_records: int = 50_000) -> List[Dict]:
+    def get_all_for_export(
+        engine, table_name: str, max_records: int = 50_000
+    ) -> Tuple[List[Dict], int]:
         """
         Get all records from a data table for export/seed (no pagination).
-        Limited to max_records to avoid excessive memory use.
+        Limited to *max_records* to avoid excessive memory use.
+
+        Returns:
+            ``(records, total_count)`` — *total_count* is the true row count
+            even if *records* is capped.
         """
         tn = pg_ident(table_name)
         with engine.connect() as conn:
+            total = conn.execute(text(f"SELECT COUNT(*) FROM {tn}")).scalar() or 0
             query = text(f"SELECT * FROM {tn} ORDER BY id ASC LIMIT :limit")
             result = conn.execute(query, {'limit': max_records})
-            return [dict(row._mapping) for row in result]
+            rows = [dict(row._mapping) for row in result]
+            return rows, total
 
     @staticmethod
-    def get_rows_since(engine, table_name: str, since_dt, max_records: int = 50_000) -> List[Dict]:
+    def get_rows_since(
+        engine, table_name: str, since_dt, max_records: int = 50_000
+    ) -> Tuple[List[Dict], int]:
         """
-        Get all records with created_at strictly after since_dt, ordered oldest-first.
-        Used for incremental SharePoint uploads — only new rows since the last watermark.
+        Get records with ``created_at > since_dt``, ordered oldest-first.
+        Used for incremental SharePoint uploads.
+
+        Returns:
+            ``(records, total_new)`` — *total_new* is the true count of
+            rows newer than the watermark, even if *records* is capped.
         """
         tn = pg_ident(table_name)
         with engine.connect() as conn:
+            total = conn.execute(
+                text(f"SELECT COUNT(*) FROM {tn} WHERE created_at > :since"),
+                {'since': since_dt},
+            ).scalar() or 0
             query = text(
-                f"SELECT * FROM {tn} WHERE created_at > :since ORDER BY created_at ASC LIMIT :limit"
+                f"SELECT * FROM {tn} WHERE created_at > :since "
+                f"ORDER BY created_at ASC LIMIT :limit"
             )
             result = conn.execute(query, {'since': since_dt, 'limit': max_records})
-            return [dict(row._mapping) for row in result]
+            rows = [dict(row._mapping) for row in result]
+            return rows, total
     
     @staticmethod
     def get_by_id(engine, table_name: str, record_id: int) -> Optional[Dict]:

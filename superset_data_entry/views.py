@@ -10,6 +10,7 @@ Having any of these = has access to the plugin (1). None = no access (2).
 """
 from flask_appbuilder import BaseView, expose, has_access
 from flask import render_template, request, jsonify, flash, redirect, url_for, Response, current_app
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timezone
 import csv
@@ -422,19 +423,6 @@ class DataEntryView(BaseView):
             # Save to PostgreSQL
             record_id = DataEntryDAO.insert(engine, form_config.table_name, data, g.user.username)
 
-            # Optionally export to SharePoint (non-blocking: a SharePoint error never
-            # prevents the submission from being recorded in the database)
-            if form_config.sharepoint_enabled:
-                try:
-                    from .sharepoint import SharePointExporter
-                    SharePointExporter().upload_row(form_config, data)
-                except Exception as sp_err:
-                    logger.error(
-                        "SharePoint export failed for form %s: %s",
-                        form_id, sp_err,
-                        exc_info=True,
-                    )
-
             return jsonify({
                 'success': True,
                 'record_id': record_id,
@@ -459,12 +447,34 @@ class DataGridView(BaseView):
     default_view = "grid"
     class_permission_name = DATA_ENTRY_VIEW
     base_permissions = [PERM_CONFIGURE_FORMS, PERM_MANAGE_DATA, PERM_ENTRY_ONLY]
-    method_permission_name = {"grid": "manage_data", "seed_download": "manage_data", "csv_download": "manage_data", "delete": "manage_data", "sharepoint_upload": "manage_data"}
+    method_permission_name = {"grid": "manage_data", "seed_download": "manage_data", "csv_download": "manage_data", "delete": "manage_data", "sharepoint_upload": "manage_data", "test_sharepoint": "manage_data"}
 
     def is_accessible(self):
         # entry_only users can view data, download, and upload to SharePoint;
         # manage_data users additionally can delete records.
         return can_access_form_list_and_submit()
+
+    @staticmethod
+    def _log_upload(engine, form_id, username, mode, rows_uploaded, warning, error, t0):
+        """Best-effort insert into de_sharepoint_upload_log (audit trail)."""
+        import time as _time
+        duration_ms = int((_time.monotonic() - t0) * 1000)
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO de_sharepoint_upload_log "
+                        "(form_id, uploaded_by, mode, rows_uploaded, warning, error, duration_ms) "
+                        "VALUES (:fid, :user, :mode, :rows, :warn, :err, :dur)"
+                    ),
+                    {
+                        'fid': form_id, 'user': username, 'mode': mode,
+                        'rows': rows_uploaded, 'warn': warning, 'err': error,
+                        'dur': duration_ms,
+                    },
+                )
+        except Exception as log_err:
+            logger.debug("Could not write SP upload log: %s", log_err)
 
     @expose('/<int:form_id>')
     def grid(self, form_id):
@@ -544,7 +554,7 @@ class DataGridView(BaseView):
             if not user_can_enter_data_for_form(g.user, form_config, engine):
                 flash("Access denied to this form", "danger")
                 return redirect('/data-entry/forms/list/')
-            records = DataEntryDAO.get_all_for_export(engine, form_config.table_name)
+            records, _total = DataEntryDAO.get_all_for_export(engine, form_config.table_name)
 
             def _serialize(obj):
                 if isinstance(obj, datetime):
@@ -585,8 +595,6 @@ class DataGridView(BaseView):
         if not can_access_form_list_and_submit():
             flash("Access denied", "danger")
             return redirect(request.referrer or "/data-entry/forms/list/")
-            flash("Access denied", "danger")
-            return redirect(request.referrer or "/data-entry/forms/list/")
         session = None
         try:
             from flask import g
@@ -598,7 +606,7 @@ class DataGridView(BaseView):
             if not user_can_enter_data_for_form(g.user, form_config, engine):
                 flash("Access denied to this form", "danger")
                 return redirect('/data-entry/forms/list/')
-            records = DataEntryDAO.get_all_for_export(engine, form_config.table_name)
+            records, _total = DataEntryDAO.get_all_for_export(engine, form_config.table_name)
 
             def cell_value(val):
                 if val is None:
@@ -674,10 +682,41 @@ class DataGridView(BaseView):
             if force and not is_superset_admin():
                 return jsonify({'error': 'Only administrators can force a full re-upload'}), 403
 
-            from .sharepoint import SharePointExporter
-            rows_uploaded, mode = SharePointExporter().upload_incremental(
-                form_config, engine, force=force
+            from .sharepoint import (
+                SharePointExporter,
+                SharePointAuthError,
+                SharePointNotFoundError,
+                SharePointConflictError,
+                SharePointCredentialsError,
             )
+
+            import time as _time
+            _t0 = _time.monotonic()
+            _upload_error = None
+
+            try:
+                rows_uploaded, mode, warning = SharePointExporter().upload_incremental(
+                    form_config, engine, force=force
+                )
+            except SharePointCredentialsError as exc:
+                _upload_error = str(exc)
+                self._log_upload(engine, form_id, g.user.username, 'error', 0, None, _upload_error, _t0)
+                return jsonify({'error': _upload_error}), 400
+            except SharePointAuthError as exc:
+                _upload_error = str(exc)
+                self._log_upload(engine, form_id, g.user.username, 'error', 0, None, _upload_error, _t0)
+                return jsonify({'error': _upload_error}), 401
+            except SharePointNotFoundError as exc:
+                _upload_error = str(exc)
+                self._log_upload(engine, form_id, g.user.username, 'error', 0, None, _upload_error, _t0)
+                return jsonify({'error': _upload_error}), 404
+            except SharePointConflictError as exc:
+                _upload_error = str(exc)
+                self._log_upload(engine, form_id, g.user.username, 'error', 0, None, _upload_error, _t0)
+                return jsonify({'error': _upload_error}), 409
+
+            # Log successful upload
+            self._log_upload(engine, form_id, g.user.username, mode, rows_uploaded, warning, None, _t0)
 
             last_uploaded_at_str = None
             if mode != 'no_new_rows':
@@ -687,15 +726,59 @@ class DataGridView(BaseView):
             elif form_config.sharepoint_last_uploaded_at:
                 last_uploaded_at_str = form_config.sharepoint_last_uploaded_at.isoformat()
 
-            return jsonify({
+            result = {
                 'success': True,
                 'rows_uploaded': rows_uploaded,
                 'mode': mode,
                 'last_uploaded_at': last_uploaded_at_str,
-            })
+            }
+            if warning:
+                result['warning'] = warning
+
+            return jsonify(result)
 
         except Exception as e:
             logger.error(f"Error uploading to SharePoint: {e}", exc_info=True)
+            return jsonify({'error': 'An internal server error occurred'}), 500
+        finally:
+            if session:
+                session.close()
+
+    @expose('/<int:form_id>/test-sharepoint', methods=['POST'])
+    def test_sharepoint(self, form_id):
+        """Test SharePoint connection without uploading anything (admin only)."""
+        r = _require_login()
+        if r is not None:
+            return r
+        if not is_superset_admin():
+            return jsonify({'error': 'Only administrators can test the connection'}), 403
+        session = None
+        try:
+            session, engine = get_db_session()
+            form_config = FormConfigDAO.get_by_id(session, form_id)
+            if not form_config:
+                return jsonify({'error': 'Form not found'}), 404
+
+            from .sharepoint import (
+                SharePointExporter,
+                SharePointAuthError,
+                SharePointNotFoundError,
+                SharePointCredentialsError,
+            )
+
+            try:
+                message = SharePointExporter().test_connection(form_config)
+            except SharePointCredentialsError as exc:
+                return jsonify({'success': False, 'error': str(exc)}), 400
+            except SharePointAuthError as exc:
+                return jsonify({'success': False, 'error': str(exc)}), 401
+            except SharePointNotFoundError as exc:
+                return jsonify({'success': False, 'error': str(exc)}), 404
+
+            return jsonify({'success': True, 'message': message})
+
+        except Exception as e:
+            logger.error(f"Error testing SharePoint connection: {e}", exc_info=True)
             return jsonify({'error': 'An internal server error occurred'}), 500
         finally:
             if session:
