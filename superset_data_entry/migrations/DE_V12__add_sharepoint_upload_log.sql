@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS de_sharepoint_upload_log (
     id              SERIAL PRIMARY KEY,
-    form_id         INTEGER NOT NULL REFERENCES de_form_configurations(id) ON DELETE CASCADE,
+    form_id         INTEGER NOT NULL REFERENCES form_configurations(id) ON DELETE CASCADE,
     uploaded_by     VARCHAR(256) NOT NULL,
     mode            VARCHAR(20)  NOT NULL,        -- 'seed', 'incremental', 'no_new_rows'
     rows_uploaded   INTEGER      NOT NULL DEFAULT 0,
